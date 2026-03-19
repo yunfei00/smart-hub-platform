@@ -30,22 +30,35 @@ class DiskCleanupView(TemplateView):
         with request.urlopen(req, timeout=20) as response:  # nosec B310
             return json.loads(response.read().decode("utf-8"))
 
+    @staticmethod
+    def _friendly_agent_error(exc: Exception, action: str) -> str:
+        if isinstance(exc, error.URLError):
+            return f"Agent 服务暂不可用，无法{action}。请检查 Agent 是否启动。"
+
+        if isinstance(exc, error.HTTPError):
+            detail = ""
+            try:
+                payload = json.loads(exc.read().decode("utf-8"))
+                detail = payload.get("error") or payload.get("detail") or ""
+            except Exception:  # pylint: disable=broad-except
+                detail = ""
+            suffix = f"（{detail}）" if detail else ""
+            return f"Agent 请求失败，无法{action}（HTTP {exc.code}）{suffix}"
+
+        return f"{action}失败，请稍后重试。"
+
     def _load_rules(self) -> tuple[list[dict], str | None]:
         try:
             data = self._agent_get("/rules")
             return data.get("rules", []), None
-        except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8")
-            return [], f"加载规则失败（HTTP {exc.code}）：{detail}"
         except Exception as exc:  # pylint: disable=broad-except
-            return [], f"加载规则失败：{exc}"
+            return [], self._friendly_agent_error(exc, "加载规则")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rules, rule_error = self._load_rules()
         context.update(
             {
-                "agent_base_url": settings.AGENT_BASE_URL,
                 "rules": rules,
                 "rule_error": rule_error,
                 "selected_rule_id": "",
@@ -53,6 +66,7 @@ class DiskCleanupView(TemplateView):
                 "clean_result": None,
                 "page_error": None,
                 "selected_files": [],
+                "rules_config_path": settings.RULES_CONFIG_PATH,
             }
         )
         return context
@@ -98,11 +112,10 @@ class DiskCleanupView(TemplateView):
                 context["selected_files"] = []
             else:
                 context["page_error"] = "不支持的操作。"
-        except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8")
-            context["page_error"] = f"调用 Agent 失败（HTTP {exc.code}）：{detail}"
         except Exception as exc:  # pylint: disable=broad-except
-            context["page_error"] = f"调用 Agent 失败：{exc}"
+            context["page_error"] = self._friendly_agent_error(
+                exc, "扫描" if action == "scan" else "清理"
+            )
 
         return self.render_to_response(context)
 
@@ -111,16 +124,16 @@ class ToolCenterView(TemplateView):
     template_name = "tool_center.html"
 
     def _load_tools(self) -> tuple[list[dict], str | None]:
-        config_path = settings.BASE_DIR / "config" / "tools.json"
+        config_path = settings.TOOL_CONFIG_PATH
         try:
             with config_path.open("r", encoding="utf-8") as config_file:
                 data = json.load(config_file)
         except FileNotFoundError:
-            return [], f"工具配置不存在：{config_path}"
-        except json.JSONDecodeError as exc:
-            return [], f"工具配置格式错误：{exc}"
-        except Exception as exc:  # pylint: disable=broad-except
-            return [], f"读取工具配置失败：{exc}"
+            return [], "工具配置文件不存在，请检查 TOOL_CONFIG_PATH。"
+        except json.JSONDecodeError:
+            return [], "工具配置格式错误，请检查 JSON 内容。"
+        except Exception:  # pylint: disable=broad-except
+            return [], "读取工具配置失败，请稍后重试。"
 
         tools = data.get("tools", []) if isinstance(data, dict) else []
         if not isinstance(tools, list):
@@ -131,7 +144,13 @@ class ToolCenterView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         tools, load_error = self._load_tools()
-        context.update({"tools": tools, "load_error": load_error})
+        context.update(
+            {
+                "tools": tools,
+                "load_error": load_error,
+                "tool_config_path": settings.TOOL_CONFIG_PATH,
+            }
+        )
         return context
 
 

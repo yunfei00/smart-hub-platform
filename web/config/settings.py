@@ -1,10 +1,19 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = "django-insecure-change-this-in-production"
-DEBUG = True
-ALLOWED_HOSTS: list[str] = []
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-change-this-in-production")
+DEBUG = env_bool("DJANGO_DEBUG", True)
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",") if os.getenv("DJANGO_ALLOWED_HOSTS") else []
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -39,6 +48,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "api.context_processors.project_settings",
             ],
         },
     },
@@ -71,4 +81,11 @@ REST_FRAMEWORK = {
     ],
 }
 
-AGENT_BASE_URL = "http://127.0.0.1:8001"
+PROJECT_NAME = os.getenv("PROJECT_NAME", "Smart Hub Platform")
+AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "http://127.0.0.1:8001")
+TOOL_CONFIG_PATH = Path(os.getenv("TOOL_CONFIG_PATH", str(BASE_DIR / "config" / "tools.json")))
+RULES_CONFIG_PATH = Path(os.getenv("RULES_CONFIG_PATH", str(BASE_DIR.parent / "agent" / "rules.json")))
+AI_ENABLED = env_bool("AI_ENABLED", False)
+AI_PROVIDER = os.getenv("AI_PROVIDER", "")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "")
+AI_MODEL = os.getenv("AI_MODEL", "")
