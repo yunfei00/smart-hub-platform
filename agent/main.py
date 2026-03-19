@@ -22,7 +22,7 @@ async def handle_agent_error(_: Request, exc: AgentError) -> JSONResponse:
 
 @app.exception_handler(Exception)
 async def handle_unknown_error(_: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(status_code=500, content={"error": f"internal error: {exc}"})
+    return JSONResponse(status_code=500, content={"error": "internal error"})
 
 
 @app.get("/health")

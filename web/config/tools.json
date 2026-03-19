@@ -1,25 +1,37 @@
 {
   "tools": [
     {
+      "id": "7zip",
       "name": "7-Zip",
       "version": "24.09",
       "description": "轻量压缩/解压工具，支持常见归档格式。",
       "download_url": "https://www.7-zip.org/download.html",
-      "remark": "推荐用于大文件归档"
+      "remark": "推荐用于大文件归档",
+      "category": "archive",
+      "platform": "windows",
+      "status": "active"
     },
     {
+      "id": "everything",
       "name": "Everything",
       "version": "1.4.1",
       "description": "快速文件索引与搜索工具。",
       "download_url": "https://www.voidtools.com/downloads/",
-      "remark": "适合定位清理目标文件"
+      "remark": "适合定位清理目标文件",
+      "category": "search",
+      "platform": "windows",
+      "status": "active"
     },
     {
+      "id": "windirstat",
       "name": "WinDirStat",
       "version": "2.2.2",
       "description": "磁盘空间可视化分析工具。",
       "download_url": "https://windirstat.net/download.html",
-      "remark": "可辅助识别大体积目录"
+      "remark": "可辅助识别大体积目录",
+      "category": "disk",
+      "platform": "windows",
+      "status": "active"
     }
   ]
 }
