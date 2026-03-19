@@ -32,7 +32,7 @@ class LLMResult:
     message: str
     model: str
     response_type: str
-    tool_suggestion: dict | None = None
+    items: list[dict] | None = None
 
 
 class OpenAICompatibleLLMClient:
@@ -65,17 +65,19 @@ class OpenAICompatibleLLMClient:
 
         return "你是通用问答助手，请给出清晰、简洁、可执行的答案。"
 
-    def _build_messages(self, mode: str, prompt: str, tool_schemas: list[dict]) -> list[dict]:
-        tool_schema_json = json.dumps(tool_schemas, ensure_ascii=False)
+    def _build_messages(self, mode: str, prompt: str, recommendation_context: dict) -> list[dict]:
+        recommendation_context_json = json.dumps(recommendation_context, ensure_ascii=False)
         system_prompt = (
             f"{self._base_system_prompt(mode)}\n"
             "你必须只输出一个 JSON 对象，不要输出其他文本。"
             "JSON 协议："
             '{"type":"answer","message":"..."}'
             " 或 "
-            '{"type":"tool_call","tool_name":"...","arguments":{...},"message":"..."}。'
-            "禁止输出白名单外工具。"
-            f"白名单工具：{tool_schema_json}"
+            '{"type":"rule_recommendation","message":"...","items":[{"label":"...","rule_id":"...","target_url":"..."}]}'
+            " 或 "
+            '{"type":"page_navigation","message":"...","items":[{"label":"...","target_url":"..."}]}。'
+            "只允许推荐系统白名单中的规则或页面，不要输出外部链接。"
+            f"白名单上下文：{recommendation_context_json}"
         )
 
         return [
@@ -85,32 +87,35 @@ class OpenAICompatibleLLMClient:
 
     @staticmethod
     def _from_parsed(parsed: ParsedLLMResponse, model_name: str) -> LLMResult:
-        if parsed.response_type == "tool_call" and parsed.tool_call:
+        if parsed.response_type in {"rule_recommendation", "page_navigation"} and parsed.items:
             return LLMResult(
                 message=parsed.message,
                 model=model_name,
-                response_type="tool_call",
-                tool_suggestion={
-                    "name": parsed.tool_call.tool_name,
-                    "args": parsed.tool_call.arguments,
-                    "message": parsed.message,
-                },
+                response_type=parsed.response_type,
+                items=[
+                    {
+                        "label": item.label,
+                        "rule_id": item.rule_id,
+                        "target_url": item.target_url,
+                    }
+                    for item in parsed.items
+                ],
             )
 
         return LLMResult(
             message=parsed.message,
             model=model_name,
             response_type="answer",
-            tool_suggestion=None,
+            items=None,
         )
 
-    def ask(self, mode: str, prompt: str, tool_schemas: list[dict]) -> LLMResult:
+    def ask(self, mode: str, prompt: str, recommendation_context: dict) -> LLMResult:
         self._validate()
 
         endpoint = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model,
-            "messages": self._build_messages(mode, prompt, tool_schemas),
+            "messages": self._build_messages(mode, prompt, recommendation_context),
         }
 
         headers = {"Content-Type": "application/json"}

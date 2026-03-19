@@ -13,7 +13,7 @@
 ### 已实现
 - 磁盘清理：按规则扫描、勾选、执行清理。
 - 工具中心：展示工具信息（名称/版本/分类/平台/状态/下载地址等）。
-- AI 助手：本地模型接入（OpenAI 兼容接口，默认 Ollama）+ 白名单工具“建议 -> 确认 -> 执行”。
+- AI 助手：本地模型接入（OpenAI 兼容接口，默认 Ollama）+ 推荐入口“推荐 -> 用户点击 -> 页面跳转”。
 - 统一配置：支持通过环境变量覆盖关键参数。
 
 ### 暂不实现
@@ -131,32 +131,35 @@ curl -X POST http://127.0.0.1:8000/api/ai/ask/ \
 {
   "answer": "...",
   "model": "qwen2.5-coder:32b",
+  "type": "answer",
+  "items": [],
   "success": true,
   "error_message": ""
 }
 ```
 
 
-## Phase 7：AI 助手接入白名单工具调用
+## Phase 7.5：AI 推荐规则并跳转页面
 
-当前 AI 助手采用“建议 -> 确认 -> 执行”的安全闭环：
+当前 AI 助手已切换为“推荐 -> 用户点击 -> 页面跳转”模式，不再执行工具：
 
-1. **建议**：模型仅按稳定 JSON 协议输出两类结果：`answer` 或 `tool_call`。
-2. **确认**：页面展示工具名、参数和建议说明，等待用户点击“确认执行”。
-3. **执行**：后端对白名单工具和参数二次校验，再调用 Agent 返回结果。
+1. **输出协议**：模型按 JSON 返回 `answer` / `rule_recommendation` / `page_navigation`。
+2. **推荐展示**：页面统一展示推荐按钮，用户点击后跳转目标页面。
+3. **后端兜底**：`target_url` 由后端按白名单生成/校验，拒绝任意外链。
 
-### 白名单工具（第一批）
+### 已支持推荐范围
 
-- `disk_scan_rule`：参数 `rule_id`，通过 rule_id 查规则路径后调用 `/scan`。
-- `disk_clean_selected`：参数 `rule_id, files`，调用 `/clean`。
+- 页面入口：`/disk-cleanup/`、`/tools/`
+- 规则推荐：基于 `agent/rules.json`（通过 Agent `/rules` 获取）
+- 磁盘清理页支持 `rule_id` 参数预选规则，不会自动扫描或自动清理
 
 ### 安全限制
 
-- 不支持自动执行。
-- 不允许模型执行任意命令。
-- 不允许传入任意路径（仅允许通过 `rule_id` 间接解析规则路径）。
-- 仅允许白名单工具（当前仅 `disk_scan_rule` / `disk_clean_selected`），参数必须校验。
-- 仍依赖 Agent 侧规则白名单做最终校验。
+- 不执行工具（`/api/ai/tool-execute/` 已禁用）。
+- 不自动扫描。
+- 不自动清理。
+- 不允许任意 URL 跳转。
+- 推荐项必须来自系统白名单页面或规则。
 
 ## 最小部署说明（组内可交付）
 
@@ -179,7 +182,8 @@ cd web && python manage.py check
 - Agent 关闭时，磁盘清理页出现友好错误提示。
 - 工具配置损坏时，工具中心显示友好错误信息。
 - AI 助手页可提交 mode/prompt，并展示回答。
-- AI 助手在给出工具建议时，会展示工具名/参数预览，确认后才执行并显示结果。
-- `/api/ai/ask/` 返回 `tool_suggestion`（如有建议）。
-- `/api/ai/tool-execute/` 仅执行白名单工具并返回结果。
+- AI 助手在给出推荐项时，展示可点击按钮并跳转目标页面。
+- `/api/ai/ask/` 返回 `type + items`（无推荐时 items 为空数组）。
+- `/disk-cleanup/?rule_id=<id>` 会预选规则；非法 rule_id 显示友好提示。
+- `/api/ai/tool-execute/` 返回已禁用提示。
 - LLM 未配置、超时、服务不可用时，页面和接口返回 error_message。
