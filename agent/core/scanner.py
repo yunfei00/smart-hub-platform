@@ -6,6 +6,7 @@ from .exceptions import AgentError
 from .models import CleanResponse, Rule, ScanResponse, ScannedEntry
 
 PROJECT_ROOT = BASE_DIR.parent
+PERMISSION_DENIED_REASON = "无权限访问，不可处理"
 
 
 def _to_abs_path(raw_path: str, base: Path | None = None) -> Path:
@@ -35,28 +36,76 @@ def _dir_file_size(target: Path) -> int:
     return total
 
 
-def _build_entry(item: Path, rule_root: Path) -> ScannedEntry:
-    item_type = "dir" if item.is_dir() else "file"
+def _permission_denied_entry(item: Path, rule_root: Path, item_type: str) -> ScannedEntry:
     rel_path = item.relative_to(rule_root).as_posix()
-
-    if item_type == "file":
-        stat = item.stat()
-        return ScannedEntry(
-            path=rel_path,
-            type="file",
-            size=stat.st_size,
-            mtime=stat.st_mtime,
-        )
-
-    dir_stat = item.stat()
-    children = [_build_entry(child, rule_root) for child in sorted(item.iterdir(), key=lambda p: p.name)]
-
     return ScannedEntry(
         path=rel_path,
-        type="dir",
-        size=_dir_file_size(item),
-        mtime=dir_stat.st_mtime,
-        children=children,
+        type=item_type,
+        size=0,
+        mtime=0,
+        selectable=False,
+        disabled_reason=PERMISSION_DENIED_REASON,
+    )
+
+
+def _build_entry(item: Path, rule_root: Path) -> tuple[ScannedEntry, int]:
+    rel_path = item.relative_to(rule_root).as_posix()
+
+    try:
+        item_type = "dir" if item.is_dir() else "file"
+    except OSError:
+        item_type = "dir" if item.suffix == "" else "file"
+        return _permission_denied_entry(item, rule_root, item_type), 0
+
+    if item_type == "file":
+        try:
+            stat = item.stat()
+            return (
+                ScannedEntry(
+                    path=rel_path,
+                    type="file",
+                    size=stat.st_size,
+                    mtime=stat.st_mtime,
+                ),
+                1,
+            )
+        except OSError:
+            return _permission_denied_entry(item, rule_root, "file"), 0
+
+    try:
+        dir_stat = item.stat()
+    except OSError:
+        return _permission_denied_entry(item, rule_root, "dir"), 0
+
+    children: list[ScannedEntry] = []
+    total_size = 0
+    total_files = 0
+    all_children_selectable = True
+
+    try:
+        iterator = sorted(item.iterdir(), key=lambda p: p.name)
+    except OSError:
+        return _permission_denied_entry(item, rule_root, "dir"), 0
+
+    for child in iterator:
+        child_entry, child_files = _build_entry(child, rule_root)
+        children.append(child_entry)
+        total_size += child_entry.size
+        total_files += child_files
+        if not child_entry.selectable:
+            all_children_selectable = False
+
+    return (
+        ScannedEntry(
+            path=rel_path,
+            type="dir",
+            size=total_size,
+            mtime=dir_stat.st_mtime,
+            children=children,
+            selectable=all_children_selectable,
+            disabled_reason=PERMISSION_DENIED_REASON if not all_children_selectable else None,
+        ),
+        total_files,
     )
 
 
@@ -78,14 +127,16 @@ def scan_path(target_path: str, rules: list[Rule]) -> ScanResponse:
     total_size = 0
     file_count = 0
 
-    for item in sorted(target.iterdir(), key=lambda p: p.name):
-        entry = _build_entry(item, target)
+    try:
+        top_items = sorted(target.iterdir(), key=lambda p: p.name)
+    except OSError:
+        raise AgentError("扫描路径无权限访问", status_code=403)
+
+    for item in top_items:
+        entry, entry_file_count = _build_entry(item, target)
         entries.append(entry)
         total_size += entry.size
-        if item.is_file():
-            file_count += 1
-        else:
-            file_count += sum(1 for child in item.rglob("*") if child.is_file())
+        file_count += entry_file_count
 
     return ScanResponse(total_size=total_size, file_count=file_count, files=entries)
 

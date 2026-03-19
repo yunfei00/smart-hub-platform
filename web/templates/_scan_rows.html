@@ -8,10 +8,13 @@
       value="{{ entry.path }}"
       data-path="{{ entry.path }}"
       data-type="{{ entry.type }}"
+      data-selectable="{% if entry.selectable %}true{% else %}false{% endif %}"
       {% if entry.path in selected_files %}checked{% endif %}
+      {% if not entry.selectable %}disabled{% endif %}
     />
   </td>
   <td>
+    <span class="me-1" aria-hidden="true">{% if entry.type == 'dir' %}📁{% else %}📄{% endif %}</span>
     {% if entry.type == 'dir' %}
     <button
       class="btn btn-sm btn-link text-decoration-none p-0 folder-toggle"
@@ -27,8 +30,15 @@
     {% else %}
     <span style="padding-left: {{ depth|default:0 }}rem;"><code>{{ entry.path }}</code></span>
     {% endif %}
+    {% if not entry.selectable and entry.disabled_reason %}
+    <span class="badge text-bg-warning ms-2">{{ entry.disabled_reason }}</span>
+    {% endif %}
   </td>
-  <td><span class="badge {% if entry.type == 'dir' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ entry.type }}</span></td>
+  <td>
+    <span class="badge {% if entry.type == 'dir' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">
+      {{ entry.type|upper }}
+    </span>
+  </td>
   <td><span class="js-size" data-size="{{ entry.size }}">{{ entry.size }}</span></td>
 </tr>
 {% if entry.type == 'dir' and entry.children %}
