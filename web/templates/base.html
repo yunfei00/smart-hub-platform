@@ -41,6 +41,9 @@
             <li class="nav-item">
               <a class="nav-link{% if request.resolver_match.url_name == 'project-analysis' %} active{% endif %}" href="{% url 'project-analysis' %}">项目分析</a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link{% if request.resolver_match.url_name == 'code-analysis' %} active{% endif %}" href="{% url 'code-analysis' %}">代码分析</a>
+            </li>
           </ul>
         </div>
       </div>

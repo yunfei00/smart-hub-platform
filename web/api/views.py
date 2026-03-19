@@ -19,6 +19,7 @@ from .services.llm import (
 )
 from .services.llm.mode_handler import LLMModes
 from .services.project_analysis import InvalidZipFileError, ProjectAnalysisError, ProjectAnalysisService
+from .services.code_analysis import CodeAnalysisError, CodeAnalysisService, InvalidCodeInputError
 
 
 @dataclass(frozen=True)
@@ -197,6 +198,10 @@ class AIAssistantView(TemplateView):
             "tool_center": NavigationItem(
                 label="工具中心",
                 target_url=reverse("tool-center"),
+            ),
+            "code_analysis": NavigationItem(
+                label="代码分析",
+                target_url=reverse("code-analysis"),
             ),
         }
 
@@ -386,6 +391,66 @@ class ProjectAnalysisView(TemplateView):
         finally:
             if cleanup_enabled and work_dir:
                 service.cleanup(work_dir)
+
+        return self.render_to_response(context)
+
+
+class CodeAnalysisView(TemplateView):
+    template_name = "code_analysis.html"
+
+    @staticmethod
+    def _default_context() -> dict:
+        return {
+            "input_mode": "snippet",
+            "snippet": "",
+            "analysis_result": None,
+            "page_error": None,
+            "uploaded_filename": "",
+        }
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self._default_context())
+        return context
+
+    def post(self, request, *args, **kwargs):
+        context = self.get_context_data()
+        input_mode = request.POST.get("input_mode", "snippet").strip().lower()
+        snippet = request.POST.get("snippet", "")
+
+        context["input_mode"] = input_mode
+        context["snippet"] = snippet
+
+        service = CodeAnalysisService()
+        try:
+            if input_mode == "upload":
+                uploaded_file = request.FILES.get("code_file")
+                if uploaded_file:
+                    context["uploaded_filename"] = uploaded_file.name
+                payload = service.build_input_from_upload(uploaded_file)
+            else:
+                payload = service.build_input_from_snippet(snippet)
+
+            result = service.analyze(payload)
+            context["analysis_result"] = {
+                "model": result.model,
+                "function_summary": result.function_summary,
+                "core_flow": result.core_flow,
+                "io_description": result.io_description,
+                "risks": result.risks,
+                "optimization_suggestions": result.optimization_suggestions,
+            }
+        except InvalidCodeInputError as exc:
+            context["page_error"] = str(exc)
+        except (
+            LLMConfigError,
+            LLMServiceUnavailableError,
+            LLMTimeoutError,
+            LLMEmptyResponseError,
+        ) as exc:
+            context["page_error"] = f"模型分析失败：{exc}"
+        except CodeAnalysisError as exc:
+            context["page_error"] = str(exc)
 
         return self.render_to_response(context)
 

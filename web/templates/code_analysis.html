@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}代码分析 · {{ project_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+  <div>
+    <h1 class="h3 mb-2">代码分析</h1>
+    <p class="text-muted mb-0">支持代码片段或单文件上传，调用本地模型输出结构化分析结果。</p>
+  </div>
+</div>
+
+{% if page_error %}
+<div class="alert alert-warning" role="alert">{{ page_error }}</div>
+{% endif %}
+
+<section class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5">输入与分析</h2>
+    <form method="post" enctype="multipart/form-data" class="vstack gap-3">
+      {% csrf_token %}
+      <div>
+        <label for="input_mode" class="form-label">输入方式</label>
+        <select class="form-select" id="input_mode" name="input_mode">
+          <option value="snippet" {% if input_mode == "snippet" %}selected{% endif %}>粘贴代码片段</option>
+          <option value="upload" {% if input_mode == "upload" %}selected{% endif %}>上传单文件</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="snippet" class="form-label">代码文本输入</label>
+        <textarea class="form-control" id="snippet" name="snippet" rows="10" placeholder="请输入代码片段">{{ snippet }}</textarea>
+        <p class="small text-muted mt-2 mb-0">当选择“粘贴代码片段”时生效。</p>
+      </div>
+
+      <div>
+        <label for="code_file" class="form-label">文件上传</label>
+        <input class="form-control" type="file" id="code_file" name="code_file" accept=".py,.sh,.js,.ts,.json,.yaml,.yml,.md">
+        <p class="small text-muted mt-2 mb-0">仅支持 .py/.sh/.js/.ts/.json/.yaml/.yml/.md，且需为 UTF-8 文本。</p>
+      </div>
+
+      <div>
+        <button class="btn btn-primary" type="submit">开始分析</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="card shadow-sm mt-3">
+  <div class="card-body">
+    <h2 class="h5">分析结果</h2>
+    {% if analysis_result %}
+      {% if uploaded_filename %}
+      <p class="mb-2"><strong>上传文件：</strong>{{ uploaded_filename }}</p>
+      {% endif %}
+      <p class="small text-muted">model: {{ analysis_result.model }}</p>
+
+      <h3 class="h6">1) 功能说明</h3>
+      <div class="border rounded p-3 mb-3" style="white-space: pre-wrap;">{{ analysis_result.function_summary }}</div>
+
+      <h3 class="h6">2) 核心流程</h3>
+      <div class="border rounded p-3 mb-3" style="white-space: pre-wrap;">{{ analysis_result.core_flow }}</div>
+
+      <h3 class="h6">3) 输入输出</h3>
+      <div class="border rounded p-3 mb-3" style="white-space: pre-wrap;">{{ analysis_result.io_description }}</div>
+
+      <h3 class="h6">4) 风险点</h3>
+      <div class="border rounded p-3 mb-3" style="white-space: pre-wrap;">{{ analysis_result.risks }}</div>
+
+      <h3 class="h6">5) 优化建议</h3>
+      <div class="border rounded p-3 mb-0" style="white-space: pre-wrap;">{{ analysis_result.optimization_suggestions }}</div>
+    {% else %}
+      <p class="text-muted mb-0">尚无分析结果。</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
