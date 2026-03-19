@@ -16,6 +16,7 @@ from .services.llm import (
     LLMTimeoutError,
     OpenAICompatibleLLMClient,
 )
+from .services.llm.mode_handler import LLMModes
 
 
 @dataclass(frozen=True)
@@ -182,7 +183,7 @@ class AIAssistantView(TemplateView):
 
     @staticmethod
     def _default_response() -> dict:
-        return {"answer": "", "model": "", "success": False, "error_message": "", "type": "answer"}
+        return {"answer": "", "model": "", "success": False, "error_message": "", "type": "answer", "render_as_code": False}
 
     @staticmethod
     def _page_whitelist() -> dict[str, NavigationItem]:
@@ -247,11 +248,22 @@ class AIAssistantView(TemplateView):
 
         return normalized
 
+    @staticmethod
+    def _should_render_as_code(mode: str, answer: str) -> bool:
+        code_modes = {
+            LLMModes.CODE_GENERATION,
+            LLMModes.CODE_EXPLANATION,
+            LLMModes.SCRIPT_GENERATION,
+        }
+        if mode in code_modes:
+            return True
+        return "```" in (answer or "")
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(
             {
-                "mode": "qa",
+                "mode": LLMModes.GENERAL_QA,
                 "prompt": "",
                 "response": self._default_response(),
                 "recommendation_items": [],
@@ -269,6 +281,7 @@ class AIAssistantView(TemplateView):
             "type": result.response_type,
             "success": True,
             "error_message": "",
+            "render_as_code": self._should_render_as_code(mode, result.message),
         }
         context["recommendation_items"] = self._normalize_recommendations(
             result.response_type, result.items
@@ -277,13 +290,13 @@ class AIAssistantView(TemplateView):
     def post(self, request, *args, **kwargs):
         context = self.get_context_data()
         action = request.POST.get("action", "ask").strip().lower()
-        mode = request.POST.get("mode", "qa").strip().lower()
+        mode = request.POST.get("mode", LLMModes.GENERAL_QA).strip().lower()
         prompt = request.POST.get("prompt", "").strip()
 
         context["mode"] = mode
         context["prompt"] = prompt
 
-        if mode not in {"qa", "code"}:
+        if mode not in LLMModes.ALL:
             context["page_error"] = "mode 参数不合法。"
             return self.render_to_response(context)
 
@@ -306,6 +319,7 @@ class AIAssistantView(TemplateView):
                     "type": "answer",
                     "success": False,
                     "error_message": str(exc),
+                    "render_as_code": False,
                 }
             return self.render_to_response(context)
 
@@ -315,10 +329,10 @@ class AIAssistantView(TemplateView):
 
 class AIAskAPIView(APIView):
     def post(self, request):
-        mode = str(request.data.get("mode", "qa")).strip().lower()
+        mode = str(request.data.get("mode", LLMModes.GENERAL_QA)).strip().lower()
         prompt = str(request.data.get("prompt", "")).strip()
 
-        if mode not in {"qa", "code"}:
+        if mode not in LLMModes.ALL:
             return Response(
                 {
                     "answer": "",
@@ -327,6 +341,7 @@ class AIAskAPIView(APIView):
                     "error_message": "mode 参数不合法。",
                     "type": "answer",
                     "items": [],
+                    "render_as_code": False,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -340,6 +355,7 @@ class AIAskAPIView(APIView):
                     "error_message": "prompt 不能为空。",
                     "type": "answer",
                     "items": [],
+                    "render_as_code": False,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -363,6 +379,7 @@ class AIAskAPIView(APIView):
                     "error_message": "",
                     "type": result.response_type,
                     "items": items,
+                    "render_as_code": view._should_render_as_code(mode, result.message),  # pylint: disable=protected-access
                 }
             )
         except (
@@ -379,6 +396,7 @@ class AIAskAPIView(APIView):
                     "error_message": str(exc),
                     "type": "answer",
                     "items": [],
+                    "render_as_code": False,
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
