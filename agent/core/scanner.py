@@ -49,19 +49,7 @@ def _build_entry(item: Path, rule_root: Path) -> ScannedEntry:
         )
 
     dir_stat = item.stat()
-    children: list[ScannedEntry] = []
-    for child in sorted(item.iterdir(), key=lambda p: p.name):
-        child_type = "dir" if child.is_dir() else "file"
-        child_size = _dir_file_size(child)
-        child_mtime = child.stat().st_mtime
-        children.append(
-            ScannedEntry(
-                path=child.relative_to(rule_root).as_posix(),
-                type=child_type,
-                size=child_size,
-                mtime=child_mtime,
-            )
-        )
+    children = [_build_entry(child, rule_root) for child in sorted(item.iterdir(), key=lambda p: p.name)]
 
     return ScannedEntry(
         path=rel_path,
