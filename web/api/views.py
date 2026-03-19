@@ -1,7 +1,9 @@
 import json
+from dataclasses import dataclass
 from urllib import error, request
 
 from django.conf import settings
+from django.urls import reverse
 from django.views.generic import TemplateView
 from rest_framework import status
 from rest_framework.response import Response
@@ -13,10 +15,13 @@ from .services.llm import (
     LLMServiceUnavailableError,
     LLMTimeoutError,
     OpenAICompatibleLLMClient,
-    ToolExecutionError,
-    ToolRegistry,
 )
-from .services.tool_schemas import ToolValidationError
+
+
+@dataclass(frozen=True)
+class NavigationItem:
+    label: str
+    target_url: str
 
 
 class LandingView(TemplateView):
@@ -69,14 +74,20 @@ class DiskCleanupView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         rules, rule_error = self._load_rules()
+        selected_rule_id = self.request.GET.get("rule_id", "").strip()
+        page_error = None
+        if selected_rule_id and not any(rule.get("id") == selected_rule_id for rule in rules):
+            page_error = "推荐规则不存在或已失效，请重新选择规则。"
+            selected_rule_id = ""
+
         context.update(
             {
                 "rules": rules,
                 "rule_error": rule_error,
-                "selected_rule_id": "",
+                "selected_rule_id": selected_rule_id,
                 "scan_result": None,
                 "clean_result": None,
-                "page_error": None,
+                "page_error": page_error,
                 "selected_files": [],
                 "rules_config_path": settings.RULES_CONFIG_PATH,
             }
@@ -171,7 +182,70 @@ class AIAssistantView(TemplateView):
 
     @staticmethod
     def _default_response() -> dict:
-        return {"answer": "", "model": "", "success": False, "error_message": ""}
+        return {"answer": "", "model": "", "success": False, "error_message": "", "type": "answer"}
+
+    @staticmethod
+    def _page_whitelist() -> dict[str, NavigationItem]:
+        return {
+            "disk_cleanup": NavigationItem(
+                label="磁盘清理",
+                target_url=reverse("disk-cleanup"),
+            ),
+            "tool_center": NavigationItem(
+                label="工具中心",
+                target_url=reverse("tool-center"),
+            ),
+        }
+
+    def _load_rules(self) -> list[dict]:
+        try:
+            endpoint = f"{settings.AGENT_BASE_URL}/rules"
+            with request.urlopen(endpoint, timeout=8) as response:  # nosec B310
+                return json.loads(response.read().decode("utf-8")).get("rules", [])
+        except Exception:  # pylint: disable=broad-except
+            return []
+
+    def _recommendation_context(self) -> dict:
+        pages = [
+            {"page_key": page_key, "label": item.label, "target_url": item.target_url}
+            for page_key, item in self._page_whitelist().items()
+        ]
+        rules = [
+            {"rule_id": str(rule.get("id", "")).strip(), "label": str(rule.get("name", "")).strip()}
+            for rule in self._load_rules()
+            if str(rule.get("id", "")).strip() and str(rule.get("name", "")).strip()
+        ]
+        return {"pages": pages, "rules": rules}
+
+    def _normalize_recommendations(self, response_type: str, items: list[dict] | None) -> list[dict]:
+        if not items:
+            return []
+
+        normalized: list[dict] = []
+        pages = self._page_whitelist()
+        rules = {str(rule.get("id")) for rule in self._load_rules() if str(rule.get("id", "")).strip()}
+
+        for item in items:
+            label = str(item.get("label", "")).strip()
+            if not label:
+                continue
+
+            if response_type == "rule_recommendation":
+                rule_id = str(item.get("rule_id", "")).strip()
+                if not rule_id or rule_id not in rules:
+                    continue
+                target_url = f"{reverse('disk-cleanup')}?rule_id={rule_id}"
+                normalized.append({"label": label, "rule_id": rule_id, "target_url": target_url})
+                continue
+
+            if response_type == "page_navigation":
+                target_url = str(item.get("target_url", "")).strip()
+                page = next((value for value in pages.values() if value.target_url == target_url), None)
+                if not page:
+                    continue
+                normalized.append({"label": label, "target_url": page.target_url})
+
+        return normalized
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -180,10 +254,7 @@ class AIAssistantView(TemplateView):
                 "mode": "qa",
                 "prompt": "",
                 "response": self._default_response(),
-                "tool_suggestion": None,
-                "tool_suggestion_json": "",
-                "tool_error": "",
-                "tool_result": None,
+                "recommendation_items": [],
                 "page_error": None,
             }
         )
@@ -191,48 +262,17 @@ class AIAssistantView(TemplateView):
 
     def _handle_ask(self, context: dict, mode: str, prompt: str) -> None:
         service = OpenAICompatibleLLMClient()
-        registry = ToolRegistry()
-
-        result = service.ask(mode=mode, prompt=prompt, tool_schemas=registry.list_tool_schemas())
+        result = service.ask(mode=mode, prompt=prompt, recommendation_context=self._recommendation_context())
         context["response"] = {
             "answer": result.message,
             "model": result.model,
+            "type": result.response_type,
             "success": True,
             "error_message": "",
         }
-
-        if result.tool_suggestion:
-            context["tool_suggestion"] = result.tool_suggestion
-            context["tool_suggestion_json"] = json.dumps(context["tool_suggestion"], ensure_ascii=False)
-
-    def _handle_execute(self, context: dict, request) -> None:
-        raw_suggestion = request.POST.get("tool_suggestion_json", "").strip()
-        if not raw_suggestion:
-            context["tool_error"] = "缺少工具建议内容，请重新提问后再执行。"
-            return
-
-        try:
-            suggestion = json.loads(raw_suggestion)
-        except json.JSONDecodeError:
-            context["tool_error"] = "工具建议内容格式错误，请重新提问。"
-            return
-
-        tool_name = suggestion.get("name")
-        tool_args = suggestion.get("args")
-
-        if not isinstance(tool_name, str) or not isinstance(tool_args, dict):
-            context["tool_error"] = "工具建议参数不完整，请重新提问。"
-            return
-
-        registry = ToolRegistry()
-        try:
-            tool_call = registry.validate_tool_call(tool_name, tool_args)
-            result = registry.execute(tool_call)
-            context["tool_result"] = result
-            context["tool_suggestion"] = {"name": tool_call.name, "args": tool_call.args}
-            context["tool_suggestion_json"] = json.dumps(context["tool_suggestion"], ensure_ascii=False)
-        except (ToolValidationError, ToolExecutionError) as exc:
-            context["tool_error"] = str(exc)
+        context["recommendation_items"] = self._normalize_recommendations(
+            result.response_type, result.items
+        )
 
     def post(self, request, *args, **kwargs):
         context = self.get_context_data()
@@ -263,13 +303,10 @@ class AIAssistantView(TemplateView):
                 context["response"] = {
                     "answer": "",
                     "model": settings.LLM_MODEL,
+                    "type": "answer",
                     "success": False,
                     "error_message": str(exc),
                 }
-            return self.render_to_response(context)
-
-        if action == "execute_tool":
-            self._handle_execute(context, request)
             return self.render_to_response(context)
 
         context["page_error"] = "不支持的 action。"
@@ -288,7 +325,8 @@ class AIAskAPIView(APIView):
                     "model": settings.LLM_MODEL,
                     "success": False,
                     "error_message": "mode 参数不合法。",
-                    "tool_suggestion": None,
+                    "type": "answer",
+                    "items": [],
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -300,22 +338,31 @@ class AIAskAPIView(APIView):
                     "model": settings.LLM_MODEL,
                     "success": False,
                     "error_message": "prompt 不能为空。",
-                    "tool_suggestion": None,
+                    "type": "answer",
+                    "items": [],
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         service = OpenAICompatibleLLMClient()
-        registry = ToolRegistry()
+        view = AIAssistantView()
         try:
-            result = service.ask(mode=mode, prompt=prompt, tool_schemas=registry.list_tool_schemas())
+            result = service.ask(
+                mode=mode,
+                prompt=prompt,
+                recommendation_context=view._recommendation_context(),  # pylint: disable=protected-access
+            )
+            items = view._normalize_recommendations(  # pylint: disable=protected-access
+                result.response_type, result.items
+            )
             return Response(
                 {
                     "answer": result.message,
                     "model": result.model,
                     "success": True,
                     "error_message": "",
-                    "tool_suggestion": result.tool_suggestion,
+                    "type": result.response_type,
+                    "items": items,
                 }
             )
         except (
@@ -330,7 +377,8 @@ class AIAskAPIView(APIView):
                     "model": settings.LLM_MODEL,
                     "success": False,
                     "error_message": str(exc),
-                    "tool_suggestion": None,
+                    "type": "answer",
+                    "items": [],
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
@@ -338,31 +386,10 @@ class AIAskAPIView(APIView):
 
 class AIToolExecuteAPIView(APIView):
     def post(self, request):
-        tool_name = str(request.data.get("name", "")).strip()
-        tool_args = request.data.get("args", {})
-
-        if not tool_name:
-            return Response(
-                {"success": False, "error_message": "工具名不能为空。", "result": None},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not isinstance(tool_args, dict):
-            return Response(
-                {"success": False, "error_message": "args 必须是对象。", "result": None},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        registry = ToolRegistry()
-        try:
-            tool_call = registry.validate_tool_call(tool_name, tool_args)
-            result = registry.execute(tool_call)
-            return Response({"success": True, "error_message": "", "result": result})
-        except (ToolValidationError, ToolExecutionError) as exc:
-            return Response(
-                {"success": False, "error_message": str(exc), "result": None},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return Response(
+            {"success": False, "error_message": "Phase 7.5 已禁用工具执行接口。", "result": None},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
 
 class HealthView(APIView):

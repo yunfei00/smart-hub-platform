@@ -7,16 +7,46 @@ class LLMResponseFormatError(Exception):
 
 
 @dataclass(frozen=True)
-class ParsedToolCall:
-    tool_name: str
-    arguments: dict
+class ParsedRecommendationItem:
+    label: str
+    rule_id: str | None = None
+    target_url: str | None = None
 
 
 @dataclass(frozen=True)
 class ParsedLLMResponse:
     response_type: str
     message: str
-    tool_call: ParsedToolCall | None = None
+    items: list[ParsedRecommendationItem] | None = None
+
+
+def _parse_items(payload: dict, response_type: str) -> list[ParsedRecommendationItem]:
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise LLMResponseFormatError(f"{response_type} 格式错误：items 必须是非空数组。")
+
+    items: list[ParsedRecommendationItem] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            raise LLMResponseFormatError(f"{response_type} 格式错误：items 元素必须是对象。")
+
+        label = str(item.get("label", "")).strip()
+        if not label:
+            raise LLMResponseFormatError(f"{response_type} 格式错误：label 必填。")
+
+        if response_type == "rule_recommendation":
+            rule_id = str(item.get("rule_id", "")).strip()
+            if not rule_id:
+                raise LLMResponseFormatError("rule_recommendation 格式错误：rule_id 必填。")
+            items.append(ParsedRecommendationItem(label=label, rule_id=rule_id))
+            continue
+
+        target_url = str(item.get("target_url", "")).strip()
+        if not target_url:
+            raise LLMResponseFormatError("page_navigation 格式错误：target_url 必填。")
+        items.append(ParsedRecommendationItem(label=label, target_url=target_url))
+
+    return items
 
 
 def parse_llm_response(content: str) -> ParsedLLMResponse:
@@ -42,16 +72,13 @@ def parse_llm_response(content: str) -> ParsedLLMResponse:
     if response_type == "answer":
         return ParsedLLMResponse(response_type="answer", message=message)
 
-    if response_type == "tool_call":
-        tool_name = str(payload.get("tool_name", "")).strip()
-        arguments = payload.get("arguments")
-        if not tool_name or not isinstance(arguments, dict):
-            raise LLMResponseFormatError("tool_call 格式错误：tool_name/arguments 不合法。")
-
+    if response_type in {"rule_recommendation", "page_navigation"}:
         return ParsedLLMResponse(
-            response_type="tool_call",
+            response_type=response_type,
             message=message,
-            tool_call=ParsedToolCall(tool_name=tool_name, arguments=arguments),
+            items=_parse_items(payload, response_type),
         )
 
-    raise LLMResponseFormatError("模型返回 type 非法，仅支持 answer 或 tool_call。")
+    raise LLMResponseFormatError(
+        "模型返回 type 非法，仅支持 answer、rule_recommendation 或 page_navigation。"
+    )

@@ -6,7 +6,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
   <div>
     <h1 class="h3 mb-2">AI 助手</h1>
-    <p class="text-muted mb-1">本地模型接入（OpenAI 兼容接口）+ 工具建议确认执行。</p>
+    <p class="text-muted mb-1">本地模型接入（OpenAI 兼容接口）+ 推荐入口点击跳转。</p>
     <p class="small text-muted mb-0">Provider：<code>{{ llm_provider|default:"-" }}</code> · 模型：<code>{{ llm_model|default:"-" }}</code></p>
   </div>
 </div>
@@ -45,12 +45,14 @@
   <div class="card-body">
     <h2 class="h5">模型回答区</h2>
     {% if response.success %}
-      {% if mode == "code" %}
+      {% if response.type == "answer" and mode == "code" %}
       <pre class="bg-dark text-light p-3 rounded mb-0" style="white-space: pre-wrap;"><code>{{ response.answer }}</code></pre>
-      {% else %}
+      {% elif response.type == "answer" %}
       <div class="border rounded p-3" style="white-space: pre-wrap;">{{ response.answer }}</div>
+      {% else %}
+      <div class="alert alert-info mb-0">{{ response.answer }}</div>
       {% endif %}
-      <p class="small text-muted mt-2 mb-0">model: {{ response.model }}</p>
+      <p class="small text-muted mt-2 mb-0">type: <code>{{ response.type }}</code> · model: {{ response.model }}</p>
     {% else %}
       <p class="text-muted mb-0">尚无结果。</p>
       {% if response.error_message %}
@@ -62,48 +64,16 @@
 
 <section class="card shadow-sm mt-3">
   <div class="card-body">
-    <h2 class="h5">工具建议区</h2>
-    {% if tool_suggestion %}
-      <p class="mb-2">建议工具：<code>{{ tool_suggestion.name }}</code></p>
-      <p class="text-muted mb-2">说明：{{ tool_suggestion.message }}</p>
-      <p class="mb-1 text-muted">参数预览：</p>
-      <pre class="bg-light border rounded p-3 mb-0" style="white-space: pre-wrap;">{{ tool_suggestion.args|pprint }}</pre>
+    <h2 class="h5">推荐结果区</h2>
+    {% if recommendation_items %}
+      <div class="d-flex flex-wrap gap-2">
+      {% for item in recommendation_items %}
+        <a class="btn btn-outline-primary" href="{{ item.target_url }}">{{ item.label }}</a>
+      {% endfor %}
+      </div>
+      <p class="small text-muted mt-2 mb-0">点击按钮后将直接跳转，不会自动执行扫描或清理。</p>
     {% else %}
-      <p class="text-muted mb-0">当前无工具建议。</p>
-    {% endif %}
-  </div>
-</section>
-
-<section class="card shadow-sm mt-3">
-  <div class="card-body">
-    <h2 class="h5">确认执行区</h2>
-    {% if tool_suggestion %}
-    <form method="post" class="vstack gap-2">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="execute_tool">
-      <input type="hidden" name="mode" value="{{ mode }}">
-      <input type="hidden" name="prompt" value="{{ prompt }}">
-      <input type="hidden" name="tool_suggestion_json" value='{{ tool_suggestion_json|escape }}'>
-      <button class="btn btn-outline-primary" type="submit">确认执行</button>
-      <p class="small text-muted mb-0">安全模式：仅允许白名单工具，参数会再次校验。</p>
-    </form>
-    {% else %}
-      <p class="text-muted mb-0">暂无可执行工具。</p>
-    {% endif %}
-
-    {% if tool_error %}
-    <div class="alert alert-warning mt-3 mb-0" role="alert">{{ tool_error }}</div>
-    {% endif %}
-  </div>
-</section>
-
-<section class="card shadow-sm mt-3">
-  <div class="card-body">
-    <h2 class="h5">执行结果区</h2>
-    {% if tool_result %}
-      <pre class="bg-light border rounded p-3 mb-0" style="white-space: pre-wrap;">{{ tool_result|pprint }}</pre>
-    {% else %}
-      <p class="text-muted mb-0">尚未执行工具。</p>
+      <p class="text-muted mb-0">当前无可跳转推荐项。</p>
     {% endif %}
   </div>
 </section>
