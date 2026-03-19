@@ -26,3 +26,14 @@ class ScanResponse(BaseModel):
     total_size: int
     file_count: int
     files: list[ScannedFile]
+
+
+class CleanRequest(BaseModel):
+    rule_id: str = Field(..., description="规则 ID")
+    files: list[str] = Field(default_factory=list, description="待删除文件路径列表")
+
+
+class CleanResponse(BaseModel):
+    deleted_count: int
+    freed_size: int
+    failed_files: list[str]

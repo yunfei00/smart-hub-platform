@@ -3,8 +3,14 @@ from fastapi.responses import JSONResponse
 
 from agent.core.config import load_rules
 from agent.core.exceptions import AgentError
-from agent.core.models import RulesResponse, ScanRequest, ScanResponse
-from agent.core.scanner import scan_path
+from agent.core.models import (
+    CleanRequest,
+    CleanResponse,
+    RulesResponse,
+    ScanRequest,
+    ScanResponse,
+)
+from agent.core.scanner import clean_files, scan_path
 
 app = FastAPI(title="smart-hub-agent", version="0.1.0")
 
@@ -34,3 +40,9 @@ def get_rules() -> RulesResponse:
 def scan(payload: ScanRequest) -> ScanResponse:
     rules = load_rules()
     return scan_path(payload.path, rules)
+
+
+@app.post("/clean", response_model=CleanResponse)
+def clean(payload: CleanRequest) -> CleanResponse:
+    rules = load_rules()
+    return clean_files(payload.rule_id, payload.files, rules)

@@ -17,6 +17,7 @@ curl http://127.0.0.1:9000/rules
 ```bash
 mkdir -p tmp/sample-downloads
 printf 'hello\n' > tmp/sample-downloads/a.txt
+printf 'world\n' > tmp/sample-downloads/b.txt
 ```
 
 3. 扫描（命中 rules.json 中允许路径）：
@@ -26,9 +27,16 @@ curl -X POST http://127.0.0.1:9000/scan \
   -d '{"path":"./tmp/sample-downloads"}'
 ```
 
-4. 扫描非法路径（应返回 403）：
+4. 清理（删除规则路径内文件）：
 ```bash
-curl -X POST http://127.0.0.1:9000/scan \
+curl -X POST http://127.0.0.1:9000/clean \
   -H 'Content-Type: application/json' \
-  -d '{"path":"./tmp/not-allowed"}'
+  -d '{"rule_id":"sample-downloads", "files":["./tmp/sample-downloads/a.txt"]}'
+```
+
+5. 清理非法路径（应跳过并返回 failed_files）：
+```bash
+curl -X POST http://127.0.0.1:9000/clean \
+  -H 'Content-Type: application/json' \
+  -d '{"rule_id":"sample-downloads", "files":["./tmp/not-allowed/x.txt"]}'
 ```
