@@ -103,6 +103,34 @@ class HomeView(TemplateView):
         return self.render_to_response(context)
 
 
+class ToolCenterView(TemplateView):
+    template_name = "tool_center.html"
+
+    def _load_tools(self) -> tuple[list[dict], str | None]:
+        config_path = settings.BASE_DIR / "config" / "tools.json"
+        try:
+            with config_path.open("r", encoding="utf-8") as config_file:
+                data = json.load(config_file)
+        except FileNotFoundError:
+            return [], f"工具配置不存在：{config_path}"
+        except json.JSONDecodeError as exc:
+            return [], f"工具配置格式错误：{exc}"
+        except Exception as exc:  # pylint: disable=broad-except
+            return [], f"读取工具配置失败：{exc}"
+
+        tools = data.get("tools", []) if isinstance(data, dict) else []
+        if not isinstance(tools, list):
+            return [], "工具配置格式错误：tools 字段必须是数组。"
+
+        return tools, None
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        tools, load_error = self._load_tools()
+        context.update({"tools": tools, "load_error": load_error})
+        return context
+
+
 class HealthView(APIView):
     def get(self, request):
         return Response({"status": "ok", "service": "smart-hub-web"})
