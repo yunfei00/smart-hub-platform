@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}记录详情 · {{ project_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-2">记录详情</h1>
+    <p class="text-muted mb-0">可查看该记录的完整内容。</p>
+  </div>
+  <div>
+    <a href="{% url 'record-center' %}" class="btn btn-outline-secondary btn-sm">返回列表</a>
+  </div>
+</div>
+
+<section class="card shadow-sm mb-3">
+  <div class="card-body">
+    <p class="mb-1"><strong>标题：</strong>{{ record.title }}</p>
+    <p class="mb-1"><strong>类型：</strong><span class="badge text-bg-secondary">{{ record.record_type }}</span></p>
+    <p class="mb-1"><strong>来源：</strong>{{ record.source_name }}</p>
+    <p class="mb-0"><strong>时间：</strong>{{ record.created_at|date:"Y-m-d H:i:s" }}</p>
+  </div>
+</section>
+
+<section class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h2 class="h5">摘要</h2>
+    <div class="border rounded p-3" style="white-space: pre-wrap;">{{ record.summary|default:"-" }}</div>
+  </div>
+</section>
+
+<section class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5">完整内容</h2>
+    <pre class="bg-light border rounded p-3 mb-0" style="white-space: pre-wrap;">{{ record.content|pprint }}</pre>
+  </div>
+</section>
+{% endblock %}
