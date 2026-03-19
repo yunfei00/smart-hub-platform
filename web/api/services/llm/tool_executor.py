@@ -1,7 +1,7 @@
 import json
 from urllib import error, request
 
-from django.conf import settings
+from api.services.system_config import RuntimeConfig
 
 
 class ToolExecutionError(Exception):
@@ -10,7 +10,7 @@ class ToolExecutionError(Exception):
 
 class AgentClient:
     def __init__(self):
-        self.base_url = settings.AGENT_BASE_URL.rstrip("/")
+        self.base_url = RuntimeConfig.agent_base_url().rstrip("/")
 
     def get(self, path: str) -> dict:
         endpoint = f"{self.base_url}{path}"

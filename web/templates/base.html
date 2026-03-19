@@ -47,6 +47,9 @@
             <li class="nav-item">
               <a class="nav-link{% if request.resolver_match.url_name == 'record-center' or request.resolver_match.url_name == 'record-detail' %} active{% endif %}" href="{% url 'record-center' %}">记录中心</a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link{% if request.resolver_match.url_name == 'system-config-list' or request.resolver_match.url_name == 'system-config-edit' %} active{% endif %}" href="{% url 'system-config-list' %}">系统配置</a>
+            </li>
           </ul>
         </div>
       </div>

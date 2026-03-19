@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}系统配置 · {{ project_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+  <div>
+    <h1 class="h3 mb-2">系统配置</h1>
+    <p class="text-muted mb-0">Phase 13（MVP）：查看并编辑平台关键配置。</p>
+  </div>
+</div>
+
+<section class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5 mb-3">配置列表</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="min-width: 180px;">配置名称</th>
+            <th style="min-width: 120px;">分类</th>
+            <th>当前值</th>
+            <th style="min-width: 220px;">说明</th>
+            <th style="width: 110px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for config in configs %}
+          <tr>
+            <td><code>{{ config.config_key }}</code></td>
+            <td>{{ config.config_group }}</td>
+            <td><code>{{ config.config_value|default:"-" }}</code></td>
+            <td>{{ config.description|default:"-" }}</td>
+            <td>
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'system-config-edit' config.config_key %}">编辑</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-center text-muted">暂无配置。</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

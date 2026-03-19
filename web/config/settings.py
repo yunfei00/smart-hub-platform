@@ -82,6 +82,7 @@ REST_FRAMEWORK = {
 }
 
 PROJECT_NAME = os.getenv("PROJECT_NAME", "Smart Hub Platform")
+PROJECT_DESC = os.getenv("PROJECT_DESC", "面向组内日常运维的统一入口平台。")
 AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "http://127.0.0.1:8001")
 TOOL_CONFIG_PATH = Path(os.getenv("TOOL_CONFIG_PATH", str(BASE_DIR / "config" / "tools.json")))
 RULES_CONFIG_PATH = Path(os.getenv("RULES_CONFIG_PATH", str(BASE_DIR.parent / "agent" / "rules.json")))
