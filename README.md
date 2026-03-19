@@ -34,8 +34,13 @@ python manage.py migrate
 python manage.py runserver 0.0.0.0:8000
 ```
 - 首页（磁盘清理页面）：`http://127.0.0.1:8000/`
+- 工具中心页面：`http://127.0.0.1:8000/tools/`
 - 健康检查：`http://127.0.0.1:8000/api/health/`
 - 页面会调用本地 Agent：`http://127.0.0.1:8001` 的 `/rules`、`/scan`、`/clean`
+
+
+### 2.1 工具中心配置（本地 JSON）
+`web/config/tools.json` 为工具中心数据源，可直接修改 `tools` 数组来增删工具，当前不依赖数据库。
 
 ### 3) 启动 Agent（FastAPI）
 ```bash
