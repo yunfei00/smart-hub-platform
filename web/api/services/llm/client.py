@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 from urllib import error, request
 
@@ -6,6 +7,8 @@ from django.conf import settings
 
 from .mode_handler import LLMPromptBuilder
 from .tool_parser import LLMResponseFormatError, ParsedLLMResponse, parse_llm_response
+
+logger = logging.getLogger(__name__)
 
 
 class LLMError(Exception):
@@ -36,6 +39,63 @@ class LLMResult:
     items: list[dict] | None = None
 
 
+@dataclass
+class _CompletionMessage:
+    content: str | list | None
+
+
+@dataclass
+class _CompletionChoice:
+    message: _CompletionMessage
+    finish_reason: str | None
+
+
+@dataclass
+class _ChatCompletion:
+    model: str
+    choices: list[_CompletionChoice]
+
+
+class _ChatCompletionsAPI:
+    def __init__(self, base_url: str, api_key: str):
+        self.base_url = base_url
+        self.api_key = api_key
+
+    def create(self, model: str, messages: list[dict], timeout: int) -> _ChatCompletion:
+        endpoint = f"{self.base_url}chat/completions"
+        payload = {"model": model, "messages": messages}
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+        req = request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with request.urlopen(req, timeout=timeout) as response:  # nosec B310
+            data = json.loads(response.read().decode("utf-8"))
+
+        raw_choices = data.get("choices") if isinstance(data.get("choices"), list) else []
+        choices = [
+            _CompletionChoice(
+                message=_CompletionMessage(content=(choice.get("message", {}) or {}).get("content")),
+                finish_reason=choice.get("finish_reason"),
+            )
+            for choice in raw_choices
+            if isinstance(choice, dict)
+        ]
+        return _ChatCompletion(model=str(data.get("model") or model), choices=choices)
+
+
+class _ChatAPI:
+    def __init__(self, base_url: str, api_key: str):
+        self.completions = _ChatCompletionsAPI(base_url=base_url, api_key=api_key)
+
+
+class _OpenAICompatClient:
+    def __init__(self, base_url: str, api_key: str):
+        self.chat = _ChatAPI(base_url=base_url, api_key=api_key)
+
+
 class OpenAICompatibleLLMClient:
     """Minimal OpenAI-compatible chat completion client."""
 
@@ -47,6 +107,7 @@ class OpenAICompatibleLLMClient:
         self.model = settings.LLM_MODEL or ""
         self.timeout = settings.LLM_TIMEOUT
         self.prompt_builder = LLMPromptBuilder()
+        self._api_style = self._detect_api_style()
 
     def _validate(self):
         if not self.enabled:
@@ -59,6 +120,53 @@ class OpenAICompatibleLLMClient:
             raise LLMConfigError("LLM_BASE_URL 未配置。")
         if not self.model:
             raise LLMConfigError("LLM_MODEL 未配置。")
+        if self._api_style in {"ollama_native_chat", "ollama_native_generate"}:
+            raise LLMConfigError(
+                "当前 LLM_BASE_URL 指向 Ollama 原生接口路径，请改为 OpenAI 兼容地址（如 http://localhost:11434/v1/）。"
+            )
+
+    def _detect_api_style(self) -> str:
+        lower_url = self.base_url.lower()
+        if "/api/chat" in lower_url:
+            return "ollama_native_chat"
+        if "/api/generate" in lower_url:
+            return "ollama_native_generate"
+        if "/v1/responses" in lower_url:
+            return "openai_compatible_responses"
+        if "/v1/chat/completions" in lower_url:
+            return "openai_compatible_chat_completions"
+        return "openai_compatible_base"
+
+    def _normalize_openai_base_url(self) -> str:
+        normalized = (self.base_url or "").rstrip("/")
+        if normalized.endswith("/v1"):
+            return f"{normalized}/"
+        return f"{normalized}/v1/"
+
+    @staticmethod
+    def _extract_message_content(chat_completion) -> str:
+        if not chat_completion.choices:
+            return ""
+        message = chat_completion.choices[0].message
+        content = message.content
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if not item:
+                    continue
+                if isinstance(item, dict):
+                    text = str(item.get("text", "")).strip()
+                else:
+                    text = str(getattr(item, "text", "")).strip()
+                if text:
+                    parts.append(text)
+            return "\n".join(parts).strip()
+        return ""
+
+    def _build_client(self, base_url: str, api_key: str) -> _OpenAICompatClient:
+        return _OpenAICompatClient(base_url=base_url, api_key=api_key)
 
     @staticmethod
     def _from_parsed(parsed: ParsedLLMResponse, model_name: str) -> LLMResult:
@@ -86,27 +194,26 @@ class OpenAICompatibleLLMClient:
 
     def ask(self, mode: str, prompt: str, recommendation_context: dict) -> LLMResult:
         self._validate()
+        base_url = self._normalize_openai_base_url()
+        api_key = self.api_key or "ollama"
+        messages = self.prompt_builder.build_messages(mode, prompt, recommendation_context)
+        client = self._build_client(base_url=base_url, api_key=api_key)
 
-        endpoint = f"{self.base_url}/v1/chat/completions"
-        payload = {
-            "model": self.model,
-            "messages": self.prompt_builder.build_messages(mode, prompt, recommendation_context),
-        }
-
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-
-        req = request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST",
+        logger.debug(
+            "LLM request prepared: provider=%s api_style=%s base_url=%s model=%s mode=%s",
+            self.provider,
+            self._api_style,
+            base_url,
+            self.model,
+            mode,
         )
 
         try:
-            with request.urlopen(req, timeout=self.timeout) as response:  # nosec B310
-                data = json.loads(response.read().decode("utf-8"))
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                timeout=self.timeout,
+            )
         except TimeoutError as exc:
             raise LLMTimeoutError("模型服务请求超时，请稍后重试。") from exc
         except error.URLError as exc:
@@ -128,14 +235,21 @@ class OpenAICompatibleLLMClient:
         except json.JSONDecodeError as exc:
             raise LLMServiceUnavailableError("模型服务返回了无效 JSON。") from exc
 
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        if not str(content).strip():
+        logger.debug(
+            "LLM response received: model=%s choices=%s finish_reason=%s",
+            response.model,
+            len(response.choices),
+            response.choices[0].finish_reason if response.choices else None,
+        )
+        content = self._extract_message_content(response)
+        if not content:
             raise LLMEmptyResponseError("模型返回为空，请调整提问后重试。")
 
         try:
             parsed = parse_llm_response(content)
         except LLMResponseFormatError as exc:
+            logger.debug("LLM response parse failed. Raw content=%s", content)
             raise LLMEmptyResponseError(str(exc)) from exc
 
-        model_name = data.get("model") or self.model
+        model_name = response.model or self.model
         return self._from_parsed(parsed, model_name)

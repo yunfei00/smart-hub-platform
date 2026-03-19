@@ -70,6 +70,9 @@ def parse_llm_response(content: str) -> ParsedLLMResponse:
         or payload.get("content")
         or payload.get("answer")
         or payload.get("text")
+        or payload.get("result")
+        or payload.get("output")
+        or payload.get("output_text")
         or ""
     ).strip()
 
@@ -84,7 +87,7 @@ def parse_llm_response(content: str) -> ParsedLLMResponse:
             response_type = "answer"
 
     if not message:
-        raise LLMResponseFormatError("模型返回缺少 message 字段。")
+        raise LLMResponseFormatError("模型返回缺少可读文本字段（message/content/answer/text/result/output）。")
 
     if response_type == "answer":
         return ParsedLLMResponse(response_type="answer", message=message)
