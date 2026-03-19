@@ -1,0 +1,46 @@
+{% for entry in entries %}
+<tr>
+  <td class="text-center">
+    <input
+      class="form-check-input item-checkbox"
+      type="checkbox"
+      name="selected_files"
+      value="{{ entry.path }}"
+      data-path="{{ entry.path }}"
+      data-type="{{ entry.type }}"
+      {% if entry.path in selected_files %}checked{% endif %}
+    />
+  </td>
+  <td>
+    {% if entry.type == 'dir' %}
+    <button
+      class="btn btn-sm btn-link text-decoration-none p-0 folder-toggle"
+      type="button"
+      data-bs-toggle="collapse"
+      data-bs-target="#children-{{ entry.path|slugify }}"
+      aria-expanded="false"
+      aria-controls="children-{{ entry.path|slugify }}"
+      style="padding-left: {{ depth|default:0 }}rem;"
+    >
+      <code>{{ entry.path }}</code>
+    </button>
+    {% else %}
+    <span style="padding-left: {{ depth|default:0 }}rem;"><code>{{ entry.path }}</code></span>
+    {% endif %}
+  </td>
+  <td><span class="badge {% if entry.type == 'dir' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ entry.type }}</span></td>
+  <td><span class="js-size" data-size="{{ entry.size }}">{{ entry.size }}</span></td>
+</tr>
+{% if entry.type == 'dir' and entry.children %}
+<tr class="collapse" id="children-{{ entry.path|slugify }}">
+  <td></td>
+  <td colspan="3" class="p-0">
+    <table class="table table-sm mb-0">
+      <tbody>
+        {% include "_scan_rows.html" with entries=entry.children selected_files=selected_files depth=depth|add:1 %}
+      </tbody>
+    </table>
+  </td>
+</tr>
+{% endif %}
+{% endfor %}

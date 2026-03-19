@@ -78,74 +78,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for file in scan_result.files %}
-                  <tr>
-                    <td class="text-center">
-                      <input
-                        class="form-check-input item-checkbox"
-                        type="checkbox"
-                        name="selected_files"
-                        value="{{ file.path }}"
-                        {% if file.path in selected_files %}checked{% endif %}
-                      />
-                    </td>
-                    <td>
-                      {% if file.type == 'dir' %}
-                      <button
-                        class="btn btn-sm btn-link text-decoration-none p-0 me-1"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#children-{{ forloop.counter }}"
-                        aria-expanded="false"
-                        aria-controls="children-{{ forloop.counter }}"
-                      >展开/收起</button>
-                      {% endif %}
-                      <code>{{ file.path }}</code>
-                    </td>
-                    <td><span class="badge {% if file.type == 'dir' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ file.type }}</span></td>
-                    <td><span class="js-size" data-size="{{ file.size }}">{{ file.size }}</span></td>
-                  </tr>
-                  {% if file.type == 'dir' %}
-                  <tr class="collapse" id="children-{{ forloop.counter }}">
-                    <td></td>
-                    <td colspan="3" class="p-0">
-                      <table class="table table-sm mb-0">
-                        <thead>
-                          <tr>
-                            <th style="width: 56px;"></th>
-                            <th>下一级路径</th>
-                            <th style="width: 100px;">类型</th>
-                            <th style="width: 160px;">大小</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {% for child in file.children %}
-                          <tr>
-                            <td class="text-center">
-                              <input
-                                class="form-check-input item-checkbox"
-                                type="checkbox"
-                                name="selected_files"
-                                value="{{ child.path }}"
-                                {% if child.path in selected_files %}checked{% endif %}
-                              />
-                            </td>
-                            <td><code>{{ child.path }}</code></td>
-                            <td><span class="badge {% if child.type == 'dir' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ child.type }}</span></td>
-                            <td><span class="js-size" data-size="{{ child.size }}">{{ child.size }}</span></td>
-                          </tr>
-                          {% empty %}
-                          <tr>
-                            <td></td>
-                            <td colspan="3" class="text-muted">目录为空</td>
-                          </tr>
-                          {% endfor %}
-                        </tbody>
-                      </table>
-                    </td>
-                  </tr>
-                  {% endif %}
-                  {% endfor %}
+                  {% include "_scan_rows.html" with entries=scan_result.files selected_files=selected_files depth=0 %}
                 </tbody>
               </table>
             </div>
@@ -197,14 +130,57 @@
         node.textContent = formatBytes(Number(node.dataset.size));
       });
 
-      const checkboxes = () => Array.from(document.querySelectorAll('.item-checkbox'));
+      const itemCheckboxes = Array.from(document.querySelectorAll('.item-checkbox'));
+      const checkboxMap = new Map(itemCheckboxes.map((cb) => [cb.dataset.path, cb]));
+
+      const isDescendantPath = (parentPath, targetPath) => targetPath.startsWith(`${parentPath}/`);
+
+      const getDescendants = (path) => itemCheckboxes.filter((cb) => isDescendantPath(path, cb.dataset.path));
+
+      const getAncestors = (path) => {
+        const parts = path.split('/');
+        const ancestors = [];
+        for (let index = 1; index < parts.length; index += 1) {
+          const ancestorPath = parts.slice(0, index).join('/');
+          const ancestorCheckbox = checkboxMap.get(ancestorPath);
+          if (ancestorCheckbox && ancestorCheckbox.dataset.type === 'dir') {
+            ancestors.push(ancestorCheckbox);
+          }
+        }
+        return ancestors;
+      };
+
+      const syncAncestors = (path) => {
+        const ancestors = getAncestors(path);
+        for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+          const ancestor = ancestors[index];
+          const descendants = getDescendants(ancestor.dataset.path);
+          ancestor.checked = descendants.length > 0 && descendants.every((cb) => cb.checked);
+        }
+      };
+
+      itemCheckboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', (event) => {
+          const current = event.target;
+
+          if (current.dataset.type === 'dir') {
+            getDescendants(current.dataset.path).forEach((cb) => {
+              cb.checked = current.checked;
+            });
+          }
+
+          syncAncestors(current.dataset.path);
+        });
+      });
+
       document.getElementById('select-all-btn')?.addEventListener('click', () => {
-        checkboxes().forEach((cb) => {
+        itemCheckboxes.forEach((cb) => {
           cb.checked = true;
         });
       });
+
       document.getElementById('unselect-all-btn')?.addEventListener('click', () => {
-        checkboxes().forEach((cb) => {
+        itemCheckboxes.forEach((cb) => {
           cb.checked = false;
         });
       });
