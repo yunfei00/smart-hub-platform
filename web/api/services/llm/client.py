@@ -4,6 +4,8 @@ from urllib import error, request
 
 from django.conf import settings
 
+from .tool_parser import LLMResponseFormatError, ParsedLLMResponse, parse_llm_response
+
 
 class LLMError(Exception):
     """Base error for LLM service failures."""
@@ -26,19 +28,14 @@ class LLMEmptyResponseError(LLMError):
 
 
 @dataclass
-class LLMToolSuggestion:
-    name: str
-    args: dict
-
-
-@dataclass
 class LLMResult:
-    answer: str
+    message: str
     model: str
-    tool_suggestion: LLMToolSuggestion | None = None
+    response_type: str
+    tool_suggestion: dict | None = None
 
 
-class OpenAICompatibleLLMService:
+class OpenAICompatibleLLMClient:
     """Minimal OpenAI-compatible chat completion client."""
 
     def __init__(self):
@@ -68,23 +65,18 @@ class OpenAICompatibleLLMService:
 
         return "你是通用问答助手，请给出清晰、简洁、可执行的答案。"
 
-    def _build_messages(self, mode: str, prompt: str, tool_schemas: list[dict] | None) -> list[dict]:
-        if tool_schemas:
-            tool_schema_json = json.dumps(tool_schemas, ensure_ascii=False)
-            system_prompt = (
-                f"{self._base_system_prompt(mode)}\n"
-                "你可以给出普通文本回答，或建议使用工具。"
-                "必须只输出一个 JSON 对象，不要输出其他文本。"
-                "JSON 格式："
-                '{"response_type":"text","answer":"..."}'
-                " 或 "
-                '{"response_type":"tool_suggestion","answer":"建议原因",'
-                '"tool":{"name":"...","arguments":{...}}}。'
-                "禁止建议白名单外工具。"
-                f"可用白名单工具：{tool_schema_json}"
-            )
-        else:
-            system_prompt = self._base_system_prompt(mode)
+    def _build_messages(self, mode: str, prompt: str, tool_schemas: list[dict]) -> list[dict]:
+        tool_schema_json = json.dumps(tool_schemas, ensure_ascii=False)
+        system_prompt = (
+            f"{self._base_system_prompt(mode)}\n"
+            "你必须只输出一个 JSON 对象，不要输出其他文本。"
+            "JSON 协议："
+            '{"type":"answer","message":"..."}'
+            " 或 "
+            '{"type":"tool_call","tool_name":"...","arguments":{...},"message":"..."}。'
+            "禁止输出白名单外工具。"
+            f"白名单工具：{tool_schema_json}"
+        )
 
         return [
             {"role": "system", "content": system_prompt},
@@ -92,36 +84,27 @@ class OpenAICompatibleLLMService:
         ]
 
     @staticmethod
-    def _parse_result(content: str) -> tuple[str, LLMToolSuggestion | None]:
-        stripped = content.strip()
-        if not stripped:
-            raise LLMEmptyResponseError("模型返回为空，请调整提问后重试。")
+    def _from_parsed(parsed: ParsedLLMResponse, model_name: str) -> LLMResult:
+        if parsed.response_type == "tool_call" and parsed.tool_call:
+            return LLMResult(
+                message=parsed.message,
+                model=model_name,
+                response_type="tool_call",
+                tool_suggestion={
+                    "name": parsed.tool_call.tool_name,
+                    "args": parsed.tool_call.arguments,
+                    "message": parsed.message,
+                },
+            )
 
-        try:
-            payload = json.loads(stripped)
-        except json.JSONDecodeError:
-            return stripped, None
+        return LLMResult(
+            message=parsed.message,
+            model=model_name,
+            response_type="answer",
+            tool_suggestion=None,
+        )
 
-        if not isinstance(payload, dict):
-            return stripped, None
-
-        response_type = payload.get("response_type")
-        answer = str(payload.get("answer", "")).strip()
-
-        if response_type == "tool_suggestion":
-            tool = payload.get("tool", {})
-            if isinstance(tool, dict):
-                name = str(tool.get("name", "")).strip()
-                arguments = tool.get("arguments", {})
-                if name and isinstance(arguments, dict):
-                    return answer or "建议调用工具。", LLMToolSuggestion(name=name, args=arguments)
-
-        if answer:
-            return answer, None
-
-        return stripped, None
-
-    def ask(self, mode: str, prompt: str, tool_schemas: list[dict] | None = None) -> LLMResult:
+    def ask(self, mode: str, prompt: str, tool_schemas: list[dict]) -> LLMResult:
         self._validate()
 
         endpoint = f"{self.base_url}/v1/chat/completions"
@@ -166,6 +149,13 @@ class OpenAICompatibleLLMService:
             raise LLMServiceUnavailableError("模型服务返回了无效 JSON。") from exc
 
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        answer, suggestion = self._parse_result(content)
+        if not str(content).strip():
+            raise LLMEmptyResponseError("模型返回为空，请调整提问后重试。")
+
+        try:
+            parsed = parse_llm_response(content)
+        except LLMResponseFormatError as exc:
+            raise LLMEmptyResponseError(str(exc)) from exc
+
         model_name = data.get("model") or self.model
-        return LLMResult(answer=answer, model=model_name, tool_suggestion=suggestion)
+        return self._from_parsed(parsed, model_name)

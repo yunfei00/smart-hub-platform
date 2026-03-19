@@ -12,10 +12,10 @@ from .services.llm import (
     LLMEmptyResponseError,
     LLMServiceUnavailableError,
     LLMTimeoutError,
-    OpenAICompatibleLLMService,
+    OpenAICompatibleLLMClient,
+    ToolExecutionError,
+    ToolRegistry,
 )
-from .services.tool_executor import ToolExecutionError
-from .services.tool_registry import ToolRegistry
 from .services.tool_schemas import ToolValidationError
 
 
@@ -190,22 +190,19 @@ class AIAssistantView(TemplateView):
         return context
 
     def _handle_ask(self, context: dict, mode: str, prompt: str) -> None:
-        service = OpenAICompatibleLLMService()
+        service = OpenAICompatibleLLMClient()
         registry = ToolRegistry()
 
         result = service.ask(mode=mode, prompt=prompt, tool_schemas=registry.list_tool_schemas())
         context["response"] = {
-            "answer": result.answer,
+            "answer": result.message,
             "model": result.model,
             "success": True,
             "error_message": "",
         }
 
         if result.tool_suggestion:
-            context["tool_suggestion"] = {
-                "name": result.tool_suggestion.name,
-                "args": result.tool_suggestion.args,
-            }
+            context["tool_suggestion"] = result.tool_suggestion
             context["tool_suggestion_json"] = json.dumps(context["tool_suggestion"], ensure_ascii=False)
 
     def _handle_execute(self, context: dict, request) -> None:
@@ -308,24 +305,17 @@ class AIAskAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        service = OpenAICompatibleLLMService()
+        service = OpenAICompatibleLLMClient()
         registry = ToolRegistry()
         try:
             result = service.ask(mode=mode, prompt=prompt, tool_schemas=registry.list_tool_schemas())
             return Response(
                 {
-                    "answer": result.answer,
+                    "answer": result.message,
                     "model": result.model,
                     "success": True,
                     "error_message": "",
-                    "tool_suggestion": (
-                        {
-                            "name": result.tool_suggestion.name,
-                            "args": result.tool_suggestion.args,
-                        }
-                        if result.tool_suggestion
-                        else None
-                    ),
+                    "tool_suggestion": result.tool_suggestion,
                 }
             )
         except (
