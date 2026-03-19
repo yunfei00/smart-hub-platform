@@ -1,11 +1,12 @@
 from django.contrib import admin
 from django.urls import path
 
-from api.views import HealthView, HomeView, ToolCenterView
+from api.views import DiskCleanupView, HealthView, LandingView, ToolCenterView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("", HomeView.as_view(), name="home"),
+    path("", LandingView.as_view(), name="home"),
+    path("disk-cleanup/", DiskCleanupView.as_view(), name="disk-cleanup"),
     path("tools/", ToolCenterView.as_view(), name="tool-center"),
     path("api/health/", HealthView.as_view(), name="api-health"),
 ]

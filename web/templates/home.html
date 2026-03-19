@@ -1,197 +1,44 @@
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>磁盘清理 · Smart Hub Platform</title>
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-      rel="stylesheet"
-    />
-  </head>
-  <body class="bg-light">
-    <main class="container py-4">
-      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
-        <div>
-          <h1 class="h3 mb-2">磁盘清理（Phase 1）</h1>
-          <p class="text-muted mb-0">当前 Agent 地址：<code>{{ agent_base_url }}</code></p>
-        </div>
-        <a class="btn btn-outline-primary btn-sm" href="{% url 'tool-center' %}">工具中心</a>
+{% extends "base.html" %}
+
+{% block title %}首页 · Smart Hub Platform{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+  <div>
+    <h1 class="h3 mb-2">Smart Hub Platform</h1>
+    <p class="text-muted mb-0">统一入口：快速进入磁盘清理与工具中心。</p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body d-flex flex-column">
+        <h2 class="h5">磁盘清理</h2>
+        <p class="text-muted flex-grow-1 mb-3">扫描并清理规则范围内的冗余文件。</p>
+        <a class="btn btn-primary" href="{% url 'disk-cleanup' %}">进入</a>
       </div>
+    </div>
+  </div>
 
-      {% if rule_error %}
-      <div class="alert alert-warning" role="alert">{{ rule_error }}</div>
-      {% endif %}
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body d-flex flex-column">
+        <h2 class="h5">工具中心</h2>
+        <p class="text-muted flex-grow-1 mb-3">查看可下载工具与版本信息。</p>
+        <a class="btn btn-primary" href="{% url 'tool-center' %}">进入</a>
+      </div>
+    </div>
+  </div>
 
-      {% if page_error %}
-      <div class="alert alert-danger" role="alert">{{ page_error }}</div>
-      {% endif %}
-
-      <section class="card shadow-sm mb-4">
-        <div class="card-body">
-          <form method="post" class="row g-3 align-items-end">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="scan" />
-            <div class="col-md-8">
-              <label for="rule_id" class="form-label">规则</label>
-              <select class="form-select" id="rule_id" name="rule_id" required>
-                <option value="">请选择规则...</option>
-                {% for rule in rules %}
-                <option value="{{ rule.id }}" {% if rule.id == selected_rule_id %}selected{% endif %}>
-                  {{ rule.name }} ({{ rule.path }})
-                </option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-4 d-grid">
-              <button type="submit" class="btn btn-primary">扫描</button>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      <section class="card shadow-sm">
-        <div class="card-body">
-          <h2 class="h5 mb-3">扫描结果</h2>
-
-          {% if scan_result %}
-          <div class="mb-3">
-            <span class="badge text-bg-secondary me-2">文件数量：{{ scan_result.file_count }}</span>
-            <span class="badge text-bg-secondary">总大小：<span class="js-size" data-size="{{ scan_result.total_size }}">{{ scan_result.total_size }}</span></span>
-          </div>
-
-          <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="clean" />
-            <input type="hidden" name="rule_id" value="{{ selected_rule_id }}" />
-
-            <div class="d-flex gap-2 mb-2">
-              <button class="btn btn-outline-secondary btn-sm" type="button" id="select-all-btn">全选</button>
-              <button class="btn btn-outline-secondary btn-sm" type="button" id="unselect-all-btn">取消全选</button>
-            </div>
-
-            <div class="table-responsive">
-              <table class="table table-sm table-bordered align-middle">
-                <thead class="table-light">
-                  <tr>
-                    <th style="width: 56px;">选择</th>
-                    <th>路径</th>
-                    <th style="width: 100px;">类型</th>
-                    <th style="width: 160px;">大小</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% include "_scan_rows.html" with entries=scan_result.files selected_files=selected_files depth=0 %}
-                </tbody>
-              </table>
-            </div>
-
-            <button type="submit" class="btn btn-danger">执行清理</button>
-          </form>
-          {% else %}
-          <p class="text-muted mb-0">尚未扫描，请先选择规则并点击“扫描”。</p>
-          {% endif %}
-        </div>
-      </section>
-
-      {% if clean_result %}
-      <section class="card shadow-sm mt-4">
-        <div class="card-body">
-          <h2 class="h5 mb-3">清理结果</h2>
-          <ul class="mb-0">
-            <li><strong>deleted_count：</strong>{{ clean_result.deleted_count }}</li>
-            <li><strong>freed_size：</strong><span class="js-size" data-size="{{ clean_result.freed_size }}">{{ clean_result.freed_size }}</span></li>
-            <li><strong>failed_files：</strong>{{ clean_result.failed_files|length }}</li>
-          </ul>
-          {% if clean_result.failed_files %}
-          <div class="mt-3">
-            <div class="fw-semibold mb-1">失败列表：</div>
-            <ul class="mb-0">
-              {% for failed_file in clean_result.failed_files %}
-              <li><code>{{ failed_file }}</code></li>
-              {% endfor %}
-            </ul>
-          </div>
-          {% endif %}
-        </div>
-      </section>
-      {% endif %}
-    </main>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-      function formatBytes(bytes) {
-        const units = ["B", "KB", "MB", "GB", "TB"];
-        if (!Number.isFinite(bytes) || bytes < 0) return "-";
-        if (bytes === 0) return "0 B";
-        const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-        const value = bytes / (1024 ** exponent);
-        return `${value.toFixed(value >= 100 || exponent === 0 ? 0 : 2)} ${units[exponent]}`;
-      }
-
-      document.querySelectorAll('.js-size').forEach((node) => {
-        node.textContent = formatBytes(Number(node.dataset.size));
-      });
-
-      const itemCheckboxes = Array.from(document.querySelectorAll('.item-checkbox'));
-      const checkboxMap = new Map(itemCheckboxes.map((cb) => [cb.dataset.path, cb]));
-      const selectableCheckboxes = itemCheckboxes.filter((cb) => cb.dataset.selectable === 'true');
-
-      const isDescendantPath = (parentPath, targetPath) => targetPath.startsWith(`${parentPath}/`);
-
-      const getDescendants = (path, selectableOnly = false) => itemCheckboxes.filter((cb) => {
-        const isDescendant = isDescendantPath(path, cb.dataset.path);
-        if (!isDescendant) return false;
-        return selectableOnly ? cb.dataset.selectable === 'true' : true;
-      });
-
-      const getAncestors = (path) => {
-        const parts = path.split('/');
-        const ancestors = [];
-        for (let index = 1; index < parts.length; index += 1) {
-          const ancestorPath = parts.slice(0, index).join('/');
-          const ancestorCheckbox = checkboxMap.get(ancestorPath);
-          if (ancestorCheckbox && ancestorCheckbox.dataset.type === 'dir' && ancestorCheckbox.dataset.selectable === 'true') {
-            ancestors.push(ancestorCheckbox);
-          }
-        }
-        return ancestors;
-      };
-
-      const syncAncestors = (path) => {
-        const ancestors = getAncestors(path);
-        for (let index = ancestors.length - 1; index >= 0; index -= 1) {
-          const ancestor = ancestors[index];
-          const descendants = getDescendants(ancestor.dataset.path, true);
-          ancestor.checked = descendants.length > 0 && descendants.every((cb) => cb.checked);
-        }
-      };
-
-      itemCheckboxes.forEach((checkbox) => {
-        checkbox.addEventListener('change', (event) => {
-          const current = event.target;
-
-          if (current.dataset.type === 'dir') {
-            getDescendants(current.dataset.path, true).forEach((cb) => {
-              cb.checked = current.checked;
-            });
-          }
-
-          syncAncestors(current.dataset.path);
-        });
-      });
-
-      document.getElementById('select-all-btn')?.addEventListener('click', () => {
-        selectableCheckboxes.forEach((cb) => {
-          cb.checked = true;
-        });
-      });
-
-      document.getElementById('unselect-all-btn')?.addEventListener('click', () => {
-        selectableCheckboxes.forEach((cb) => {
-          cb.checked = false;
-        });
-      });
-    </script>
-  </body>
-</html>
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100 border-secondary-subtle">
+      <div class="card-body d-flex flex-column">
+        <h2 class="h5">AI 助手</h2>
+        <p class="text-muted flex-grow-1 mb-3">对话式助手入口，当前仅提供占位展示。</p>
+        <button class="btn btn-outline-secondary" type="button" disabled>建设中</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -7,8 +7,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 
-class HomeView(TemplateView):
+class LandingView(TemplateView):
     template_name = "home.html"
+
+
+class DiskCleanupView(TemplateView):
+    template_name = "disk_cleanup.html"
 
     def _agent_get(self, path: str) -> dict:
         endpoint = f"{settings.AGENT_BASE_URL}{path}"
