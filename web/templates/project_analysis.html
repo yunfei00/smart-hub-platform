@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}项目分析 · {{ project_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+  <div>
+    <h1 class="h3 mb-2">项目分析</h1>
+    <p class="text-muted mb-0">上传 zip 压缩包，提取项目结构并调用本地模型生成分析报告。</p>
+  </div>
+</div>
+
+{% if page_error %}
+<div class="alert alert-warning" role="alert">{{ page_error }}</div>
+{% endif %}
+
+<section class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5">上传与分析</h2>
+    <form method="post" enctype="multipart/form-data" class="vstack gap-3">
+      {% csrf_token %}
+      <div>
+        <label for="zip_file" class="form-label">ZIP 文件</label>
+        <input class="form-control" type="file" id="zip_file" name="zip_file" accept=".zip" required>
+        <p class="small text-muted mt-2 mb-0">仅支持 .zip；默认忽略 .git / node_modules / build 等目录，并只读取常见文本文件。</p>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="cleanup" name="cleanup" value="1" {% if cleanup_enabled %}checked{% endif %}>
+        <label class="form-check-label" for="cleanup">分析完成后清理临时目录（可选）</label>
+      </div>
+      <div>
+        <button class="btn btn-primary" type="submit">开始分析</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="card shadow-sm mt-3">
+  <div class="card-body">
+    <h2 class="h5">分析结果</h2>
+    {% if analysis_result %}
+      <p class="mb-1"><strong>上传文件：</strong>{{ uploaded_filename }}</p>
+      <p class="mb-1"><strong>项目概览：</strong>{{ analysis_result.project_name }}</p>
+      <p class="small text-muted mb-3">解压目录：<code>{{ analysis_result.extract_dir }}</code></p>
+
+      <h3 class="h6">目录结构摘要</h3>
+      <pre class="bg-light border rounded p-3" style="white-space: pre-wrap;">{% for line in analysis_result.tree_summary %}{{ line }}
+{% endfor %}</pre>
+
+      <h3 class="h6">关键文件</h3>
+      {% if analysis_result.key_files %}
+      <ul class="mb-3">
+        {% for item in analysis_result.key_files %}
+        <li><code>{{ item }}</code></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-muted">未识别到关键文件。</p>
+      {% endif %}
+
+      <h3 class="h6">技术栈线索</h3>
+      {% if analysis_result.tech_stack_clues %}
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        {% for clue in analysis_result.tech_stack_clues %}
+        <span class="badge text-bg-secondary">{{ clue }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted">暂无明显技术栈线索。</p>
+      {% endif %}
+
+      <h3 class="h6">关键文件内容摘要</h3>
+      {% if analysis_result.file_summaries %}
+        {% for file in analysis_result.file_summaries %}
+        <div class="mb-3">
+          <p class="mb-1"><strong>{{ file.path }}</strong> <span class="text-muted small">({{ file.size }} bytes)</span></p>
+          <pre class="bg-dark text-light p-3 rounded" style="white-space: pre-wrap;">{{ file.preview }}</pre>
+        </div>
+        {% endfor %}
+      {% else %}
+      <p class="text-muted">暂无可展示摘要。</p>
+      {% endif %}
+
+      <h3 class="h6">AI 分析报告</h3>
+      <div class="border rounded p-3" style="white-space: pre-wrap;">{{ analysis_result.ai_report }}</div>
+    {% else %}
+      <p class="text-muted mb-0">尚无分析结果。</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

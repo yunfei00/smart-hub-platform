@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from urllib import error, request
 
 from django.conf import settings
@@ -17,6 +18,7 @@ from .services.llm import (
     OpenAICompatibleLLMClient,
 )
 from .services.llm.mode_handler import LLMModes
+from .services.project_analysis import InvalidZipFileError, ProjectAnalysisError, ProjectAnalysisService
 
 
 @dataclass(frozen=True)
@@ -324,6 +326,67 @@ class AIAssistantView(TemplateView):
             return self.render_to_response(context)
 
         context["page_error"] = "不支持的 action。"
+        return self.render_to_response(context)
+
+
+class ProjectAnalysisView(TemplateView):
+    template_name = "project_analysis.html"
+
+    @staticmethod
+    def _default_context() -> dict:
+        return {
+            "analysis_result": None,
+            "page_error": None,
+            "uploaded_filename": "",
+            "cleanup_enabled": False,
+        }
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self._default_context())
+        return context
+
+    def post(self, request, *args, **kwargs):
+        context = self.get_context_data()
+        uploaded_file = request.FILES.get("zip_file")
+        cleanup_enabled = request.POST.get("cleanup", "") == "1"
+        context["cleanup_enabled"] = cleanup_enabled
+
+        if not uploaded_file:
+            context["page_error"] = "请先选择 zip 文件。"
+            return self.render_to_response(context)
+
+        context["uploaded_filename"] = uploaded_file.name
+        service = ProjectAnalysisService()
+        work_dir = ""
+        try:
+            result = service.analyze(uploaded_file)
+            work_dir = str(Path(result.context.extract_dir).parent)
+            context["analysis_result"] = {
+                "project_name": result.context.project_name,
+                "extract_dir": result.context.extract_dir,
+                "top_level_items": result.context.top_level_items,
+                "tree_summary": result.context.tree_summary,
+                "key_files": result.context.key_files,
+                "tech_stack_clues": result.context.tech_stack_clues,
+                "file_summaries": result.context.file_summaries,
+                "ai_report": result.ai_report,
+            }
+        except InvalidZipFileError as exc:
+            context["page_error"] = str(exc)
+        except (
+            LLMConfigError,
+            LLMServiceUnavailableError,
+            LLMTimeoutError,
+            LLMEmptyResponseError,
+        ) as exc:
+            context["page_error"] = f"模型分析失败：{exc}"
+        except ProjectAnalysisError as exc:
+            context["page_error"] = str(exc)
+        finally:
+            if cleanup_enabled and work_dir:
+                service.cleanup(work_dir)
+
         return self.render_to_response(context)
 
 
