@@ -4,6 +4,7 @@ from urllib import error, request
 
 from django.conf import settings
 
+from .mode_handler import LLMPromptBuilder
 from .tool_parser import LLMResponseFormatError, ParsedLLMResponse, parse_llm_response
 
 
@@ -45,6 +46,7 @@ class OpenAICompatibleLLMClient:
         self.api_key = settings.LLM_API_KEY or ""
         self.model = settings.LLM_MODEL or ""
         self.timeout = settings.LLM_TIMEOUT
+        self.prompt_builder = LLMPromptBuilder()
 
     def _validate(self):
         if not self.enabled:
@@ -57,33 +59,6 @@ class OpenAICompatibleLLMClient:
             raise LLMConfigError("LLM_BASE_URL 未配置。")
         if not self.model:
             raise LLMConfigError("LLM_MODEL 未配置。")
-
-    @staticmethod
-    def _base_system_prompt(mode: str) -> str:
-        if mode == "code":
-            return "你是代码助手。优先给出可执行示例，并附简短说明。"
-
-        return "你是通用问答助手，请给出清晰、简洁、可执行的答案。"
-
-    def _build_messages(self, mode: str, prompt: str, recommendation_context: dict) -> list[dict]:
-        recommendation_context_json = json.dumps(recommendation_context, ensure_ascii=False)
-        system_prompt = (
-            f"{self._base_system_prompt(mode)}\n"
-            "你必须只输出一个 JSON 对象，不要输出其他文本。"
-            "JSON 协议："
-            '{"type":"answer","message":"..."}'
-            " 或 "
-            '{"type":"rule_recommendation","message":"...","items":[{"label":"...","rule_id":"...","target_url":"..."}]}'
-            " 或 "
-            '{"type":"page_navigation","message":"...","items":[{"label":"...","target_url":"..."}]}。'
-            "只允许推荐系统白名单中的规则或页面，不要输出外部链接。"
-            f"白名单上下文：{recommendation_context_json}"
-        )
-
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
 
     @staticmethod
     def _from_parsed(parsed: ParsedLLMResponse, model_name: str) -> LLMResult:
@@ -115,7 +90,7 @@ class OpenAICompatibleLLMClient:
         endpoint = f"{self.base_url}/v1/chat/completions"
         payload = {
             "model": self.model,
-            "messages": self._build_messages(mode, prompt, recommendation_context),
+            "messages": self.prompt_builder.build_messages(mode, prompt, recommendation_context),
         }
 
         headers = {"Content-Type": "application/json"}
