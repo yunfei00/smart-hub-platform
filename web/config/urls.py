@@ -12,6 +12,8 @@ from api.views import (
     RecordCenterDetailView,
     RecordCenterListView,
     ProjectAnalysisView,
+    SystemConfigEditView,
+    SystemConfigListView,
     ToolCenterView,
 )
 
@@ -25,6 +27,12 @@ urlpatterns = [
     path("code-analysis/", CodeAnalysisView.as_view(), name="code-analysis"),
     path("records/", RecordCenterListView.as_view(), name="record-center"),
     path("records/<int:record_id>/", RecordCenterDetailView.as_view(), name="record-detail"),
+    path("system-config/", SystemConfigListView.as_view(), name="system-config-list"),
+    path(
+        "system-config/<str:config_key>/edit/",
+        SystemConfigEditView.as_view(),
+        name="system-config-edit",
+    ),
     path("api/ai/ask/", AIAskAPIView.as_view(), name="api-ai-ask"),
     path("api/ai/tool-execute/", AIToolExecuteAPIView.as_view(), name="api-ai-tool-execute"),
     path("api/health/", HealthView.as_view(), name="api-health"),

@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib import error, request
 
-from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.views.generic import TemplateView
@@ -19,10 +18,11 @@ from .services.llm import (
     OpenAICompatibleLLMClient,
 )
 from .services.llm.mode_handler import LLMModes
-from .models import ExecutionRecord
+from .models import ExecutionRecord, SystemConfig
 from .services.project_analysis import InvalidZipFileError, ProjectAnalysisError, ProjectAnalysisService
 from .services.code_analysis import CodeAnalysisError, CodeAnalysisService, InvalidCodeInputError
 from .services.record_center import RecordCenterService
+from .services.system_config import RuntimeConfig, SystemConfigService
 
 
 @dataclass(frozen=True)
@@ -39,12 +39,12 @@ class DiskCleanupView(TemplateView):
     template_name = "disk_cleanup.html"
 
     def _agent_get(self, path: str) -> dict:
-        endpoint = f"{settings.AGENT_BASE_URL}{path}"
+        endpoint = f"{RuntimeConfig.agent_base_url()}{path}"
         with request.urlopen(endpoint, timeout=8) as response:  # nosec B310
             return json.loads(response.read().decode("utf-8"))
 
     def _agent_post(self, path: str, payload: dict) -> dict:
-        endpoint = f"{settings.AGENT_BASE_URL}{path}"
+        endpoint = f"{RuntimeConfig.agent_base_url()}{path}"
         req = request.Request(
             endpoint,
             data=json.dumps(payload).encode("utf-8"),
@@ -96,7 +96,7 @@ class DiskCleanupView(TemplateView):
                 "clean_result": None,
                 "page_error": page_error,
                 "selected_files": [],
-                "rules_config_path": settings.RULES_CONFIG_PATH,
+                "rules_config_path": RuntimeConfig.rules_config_path(),
             }
         )
         return context
@@ -176,7 +176,7 @@ class ToolCenterView(TemplateView):
     template_name = "tool_center.html"
 
     def _load_tools(self) -> tuple[list[dict], str | None]:
-        config_path = settings.TOOL_CONFIG_PATH
+        config_path = RuntimeConfig.tool_config_path()
         try:
             with config_path.open("r", encoding="utf-8") as config_file:
                 data = json.load(config_file)
@@ -200,7 +200,7 @@ class ToolCenterView(TemplateView):
             {
                 "tools": tools,
                 "load_error": load_error,
-                "tool_config_path": settings.TOOL_CONFIG_PATH,
+                "tool_config_path": RuntimeConfig.tool_config_path(),
             }
         )
         return context
@@ -223,6 +223,52 @@ class RecordCenterDetailView(TemplateView):
         record = get_object_or_404(ExecutionRecord, pk=kwargs.get("record_id"))
         context.update({"record": record})
         return context
+
+
+class SystemConfigListView(TemplateView):
+    template_name = "system_config_list.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        SystemConfigService.ensure_defaults()
+        context.update({"configs": SystemConfig.objects.all()})
+        return context
+
+
+class SystemConfigEditView(TemplateView):
+    template_name = "system_config_edit.html"
+
+    @staticmethod
+    def _clean_value(value_type: str, raw_value: str):
+        value = (raw_value or "").strip()
+        if value_type == "int":
+            try:
+                int(value)
+            except ValueError as exc:
+                raise ValueError("请输入合法整数。") from exc
+        if value_type == "bool" and value.lower() not in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+            raise ValueError("布尔值仅支持 true/false（也兼容 1/0、yes/no、on/off）。")
+        return value
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        SystemConfigService.ensure_defaults()
+        config = get_object_or_404(SystemConfig, config_key=kwargs["config_key"])
+        context.update({"config": config, "page_error": None, "page_success": None})
+        return context
+
+    def post(self, request, *args, **kwargs):
+        context = self.get_context_data(**kwargs)
+        config = context["config"]
+        raw_value = request.POST.get("config_value", "")
+        try:
+            cleaned_value = self._clean_value(config.value_type, raw_value)
+            config.config_value = cleaned_value
+            config.save(update_fields=["config_value", "updated_at"])
+            context["page_success"] = "配置已更新。"
+        except ValueError as exc:
+            context["page_error"] = str(exc)
+        return self.render_to_response(context)
 
 
 class AIAssistantView(TemplateView):
@@ -251,7 +297,7 @@ class AIAssistantView(TemplateView):
 
     def _load_rules(self) -> list[dict]:
         try:
-            endpoint = f"{settings.AGENT_BASE_URL}/rules"
+            endpoint = f"{RuntimeConfig.agent_base_url()}/rules"
             with request.urlopen(endpoint, timeout=8) as response:  # nosec B310
                 return json.loads(response.read().decode("utf-8")).get("rules", [])
         except Exception:  # pylint: disable=broad-except
@@ -366,7 +412,7 @@ class AIAssistantView(TemplateView):
             ) as exc:
                 context["response"] = {
                     "answer": "",
-                    "model": settings.LLM_MODEL,
+                    "model": RuntimeConfig.llm_model(),
                     "type": "answer",
                     "success": False,
                     "error_message": str(exc),
@@ -531,7 +577,7 @@ class AIAskAPIView(APIView):
             return Response(
                 {
                     "answer": "",
-                    "model": settings.LLM_MODEL,
+                    "model": RuntimeConfig.llm_model(),
                     "success": False,
                     "error_message": "mode 参数不合法。",
                     "type": "answer",
@@ -545,7 +591,7 @@ class AIAskAPIView(APIView):
             return Response(
                 {
                     "answer": "",
-                    "model": settings.LLM_MODEL,
+                    "model": RuntimeConfig.llm_model(),
                     "success": False,
                     "error_message": "prompt 不能为空。",
                     "type": "answer",
@@ -586,7 +632,7 @@ class AIAskAPIView(APIView):
             return Response(
                 {
                     "answer": "",
-                    "model": settings.LLM_MODEL,
+                    "model": RuntimeConfig.llm_model(),
                     "success": False,
                     "error_message": str(exc),
                     "type": "answer",

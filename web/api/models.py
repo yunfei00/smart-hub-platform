@@ -26,3 +26,28 @@ class ExecutionRecord(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_record_type_display()} - {self.title}"
+
+
+class SystemConfig(models.Model):
+    TYPE_STRING = "string"
+    TYPE_INT = "int"
+    TYPE_BOOL = "bool"
+
+    VALUE_TYPE_CHOICES = [
+        (TYPE_STRING, "字符串"),
+        (TYPE_INT, "整数"),
+        (TYPE_BOOL, "布尔值"),
+    ]
+
+    config_key = models.CharField(max_length=100, unique=True)
+    config_group = models.CharField(max_length=64)
+    config_value = models.TextField(blank=True, default="")
+    value_type = models.CharField(max_length=16, choices=VALUE_TYPE_CHOICES, default=TYPE_STRING)
+    description = models.CharField(max_length=255, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["config_group", "config_key"]
+
+    def __str__(self) -> str:
+        return f"{self.config_group}.{self.config_key}"

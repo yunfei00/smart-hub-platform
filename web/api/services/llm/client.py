@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from urllib import error, request
 
-from django.conf import settings
+from api.services.system_config import RuntimeConfig
 
 from .mode_handler import LLMPromptBuilder
 from .tool_parser import LLMResponseFormatError, ParsedLLMResponse, parse_llm_response
@@ -100,12 +100,12 @@ class OpenAICompatibleLLMClient:
     """Minimal OpenAI-compatible chat completion client."""
 
     def __init__(self):
-        self.enabled = settings.LLM_ENABLED
-        self.provider = (settings.LLM_PROVIDER or "").strip().lower()
-        self.base_url = (settings.LLM_BASE_URL or "").rstrip("/")
-        self.api_key = settings.LLM_API_KEY or ""
-        self.model = settings.LLM_MODEL or ""
-        self.timeout = settings.LLM_TIMEOUT
+        self.enabled = RuntimeConfig.llm_enabled()
+        self.provider = (RuntimeConfig.llm_provider() or "").strip().lower()
+        self.base_url = (RuntimeConfig.llm_base_url() or "").rstrip("/")
+        self.api_key = RuntimeConfig.llm_api_key() or ""
+        self.model = RuntimeConfig.llm_model() or ""
+        self.timeout = RuntimeConfig.llm_timeout()
         self.prompt_builder = LLMPromptBuilder()
         self._api_style = self._detect_api_style()
 

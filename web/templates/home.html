@@ -6,6 +6,9 @@
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
   <div>
     <h1 class="h3 mb-2">{{ project_name }}</h1>
+    {% if project_desc %}
+    <p class="text-muted mb-1">{{ project_desc }}</p>
+    {% endif %}
     <p class="text-muted mb-0">统一入口：快速进入磁盘清理、工具中心、AI 助手、项目分析、代码分析与记录中心。</p>
   </div>
 </div>
@@ -73,6 +76,16 @@
         <h2 class="h5">记录中心</h2>
         <p class="text-muted flex-grow-1 mb-3">查看历史执行与分析记录（最小可用版）。</p>
         <a class="btn btn-primary" href="{% url 'record-center' %}">进入</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card shadow-sm h-100 border-secondary-subtle">
+      <div class="card-body d-flex flex-column">
+        <h2 class="h5">系统配置</h2>
+        <p class="text-muted flex-grow-1 mb-3">查看并编辑平台关键配置（Phase 13 MVP）。</p>
+        <a class="btn btn-primary" href="{% url 'system-config-list' %}">进入</a>
       </div>
     </div>
   </div>
