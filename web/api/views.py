@@ -14,6 +14,9 @@ from .services.llm import (
     LLMTimeoutError,
     OpenAICompatibleLLMService,
 )
+from .services.tool_executor import ToolExecutionError
+from .services.tool_registry import ToolRegistry
+from .services.tool_schemas import ToolValidationError
 
 
 class LandingView(TemplateView):
@@ -177,13 +180,66 @@ class AIAssistantView(TemplateView):
                 "mode": "qa",
                 "prompt": "",
                 "response": self._default_response(),
+                "tool_suggestion": None,
+                "tool_suggestion_json": "",
+                "tool_error": "",
+                "tool_result": None,
                 "page_error": None,
             }
         )
         return context
 
+    def _handle_ask(self, context: dict, mode: str, prompt: str) -> None:
+        service = OpenAICompatibleLLMService()
+        registry = ToolRegistry()
+
+        result = service.ask(mode=mode, prompt=prompt, tool_schemas=registry.list_tool_schemas())
+        context["response"] = {
+            "answer": result.answer,
+            "model": result.model,
+            "success": True,
+            "error_message": "",
+        }
+
+        if result.tool_suggestion:
+            context["tool_suggestion"] = {
+                "name": result.tool_suggestion.name,
+                "args": result.tool_suggestion.args,
+            }
+            context["tool_suggestion_json"] = json.dumps(context["tool_suggestion"], ensure_ascii=False)
+
+    def _handle_execute(self, context: dict, request) -> None:
+        raw_suggestion = request.POST.get("tool_suggestion_json", "").strip()
+        if not raw_suggestion:
+            context["tool_error"] = "缺少工具建议内容，请重新提问后再执行。"
+            return
+
+        try:
+            suggestion = json.loads(raw_suggestion)
+        except json.JSONDecodeError:
+            context["tool_error"] = "工具建议内容格式错误，请重新提问。"
+            return
+
+        tool_name = suggestion.get("name")
+        tool_args = suggestion.get("args")
+
+        if not isinstance(tool_name, str) or not isinstance(tool_args, dict):
+            context["tool_error"] = "工具建议参数不完整，请重新提问。"
+            return
+
+        registry = ToolRegistry()
+        try:
+            tool_call = registry.validate_tool_call(tool_name, tool_args)
+            result = registry.execute(tool_call)
+            context["tool_result"] = result
+            context["tool_suggestion"] = {"name": tool_call.name, "args": tool_call.args}
+            context["tool_suggestion_json"] = json.dumps(context["tool_suggestion"], ensure_ascii=False)
+        except (ToolValidationError, ToolExecutionError) as exc:
+            context["tool_error"] = str(exc)
+
     def post(self, request, *args, **kwargs):
         context = self.get_context_data()
+        action = request.POST.get("action", "ask").strip().lower()
         mode = request.POST.get("mode", "qa").strip().lower()
         prompt = request.POST.get("prompt", "").strip()
 
@@ -194,32 +250,32 @@ class AIAssistantView(TemplateView):
             context["page_error"] = "mode 参数不合法。"
             return self.render_to_response(context)
 
-        if not prompt:
-            context["page_error"] = "请输入 prompt。"
+        if action == "ask":
+            if not prompt:
+                context["page_error"] = "请输入 prompt。"
+                return self.render_to_response(context)
+
+            try:
+                self._handle_ask(context, mode, prompt)
+            except (
+                LLMConfigError,
+                LLMServiceUnavailableError,
+                LLMTimeoutError,
+                LLMEmptyResponseError,
+            ) as exc:
+                context["response"] = {
+                    "answer": "",
+                    "model": settings.LLM_MODEL,
+                    "success": False,
+                    "error_message": str(exc),
+                }
             return self.render_to_response(context)
 
-        service = OpenAICompatibleLLMService()
-        try:
-            result = service.ask(mode=mode, prompt=prompt)
-            context["response"] = {
-                "answer": result.answer,
-                "model": result.model,
-                "success": True,
-                "error_message": "",
-            }
-        except (
-            LLMConfigError,
-            LLMServiceUnavailableError,
-            LLMTimeoutError,
-            LLMEmptyResponseError,
-        ) as exc:
-            context["response"] = {
-                "answer": "",
-                "model": settings.LLM_MODEL,
-                "success": False,
-                "error_message": str(exc),
-            }
+        if action == "execute_tool":
+            self._handle_execute(context, request)
+            return self.render_to_response(context)
 
+        context["page_error"] = "不支持的 action。"
         return self.render_to_response(context)
 
 
@@ -235,6 +291,7 @@ class AIAskAPIView(APIView):
                     "model": settings.LLM_MODEL,
                     "success": False,
                     "error_message": "mode 参数不合法。",
+                    "tool_suggestion": None,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -246,19 +303,29 @@ class AIAskAPIView(APIView):
                     "model": settings.LLM_MODEL,
                     "success": False,
                     "error_message": "prompt 不能为空。",
+                    "tool_suggestion": None,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         service = OpenAICompatibleLLMService()
+        registry = ToolRegistry()
         try:
-            result = service.ask(mode=mode, prompt=prompt)
+            result = service.ask(mode=mode, prompt=prompt, tool_schemas=registry.list_tool_schemas())
             return Response(
                 {
                     "answer": result.answer,
                     "model": result.model,
                     "success": True,
                     "error_message": "",
+                    "tool_suggestion": (
+                        {
+                            "name": result.tool_suggestion.name,
+                            "args": result.tool_suggestion.args,
+                        }
+                        if result.tool_suggestion
+                        else None
+                    ),
                 }
             )
         except (
@@ -273,8 +340,38 @@ class AIAskAPIView(APIView):
                     "model": settings.LLM_MODEL,
                     "success": False,
                     "error_message": str(exc),
+                    "tool_suggestion": None,
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+
+class AIToolExecuteAPIView(APIView):
+    def post(self, request):
+        tool_name = str(request.data.get("name", "")).strip()
+        tool_args = request.data.get("args", {})
+
+        if not tool_name:
+            return Response(
+                {"success": False, "error_message": "工具名不能为空。", "result": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not isinstance(tool_args, dict):
+            return Response(
+                {"success": False, "error_message": "args 必须是对象。", "result": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        registry = ToolRegistry()
+        try:
+            tool_call = registry.validate_tool_call(tool_name, tool_args)
+            result = registry.execute(tool_call)
+            return Response({"success": True, "error_message": "", "result": result})
+        except (ToolValidationError, ToolExecutionError) as exc:
+            return Response(
+                {"success": False, "error_message": str(exc), "result": None},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
