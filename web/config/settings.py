@@ -70,3 +70,5 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
 }
+
+AGENT_BASE_URL = "http://127.0.0.1:8001"
