@@ -33,14 +33,15 @@ cd web
 python manage.py migrate
 python manage.py runserver 0.0.0.0:8000
 ```
-- 首页：`http://127.0.0.1:8000/`
+- 首页（磁盘清理页面）：`http://127.0.0.1:8000/`
 - 健康检查：`http://127.0.0.1:8000/api/health/`
+- 页面会调用本地 Agent：`http://127.0.0.1:8001` 的 `/rules`、`/scan`、`/clean`
 
 ### 3) 启动 Agent（FastAPI）
 ```bash
-uvicorn agent.main:app --reload --host 0.0.0.0 --port 9000
+uvicorn agent.main:app --reload --host 0.0.0.0 --port 8001
 ```
-- 健康检查：`http://127.0.0.1:9000/health`
+- 健康检查：`http://127.0.0.1:8001/health`
 
 ## 目录结构
 
