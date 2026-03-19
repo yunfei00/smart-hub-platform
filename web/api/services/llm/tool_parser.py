@@ -65,7 +65,24 @@ def parse_llm_response(content: str) -> ParsedLLMResponse:
         raise LLMResponseFormatError("模型返回必须为 JSON 对象。")
 
     response_type = str(payload.get("type", "")).strip()
-    message = str(payload.get("message", "")).strip()
+    message = str(
+        payload.get("message")
+        or payload.get("content")
+        or payload.get("answer")
+        or payload.get("text")
+        or ""
+    ).strip()
+
+    if not response_type:
+        if "items" in payload:
+            has_rule_id = any(
+                isinstance(item, dict) and str(item.get("rule_id", "")).strip()
+                for item in payload.get("items", [])
+            )
+            response_type = "rule_recommendation" if has_rule_id else "page_navigation"
+        else:
+            response_type = "answer"
+
     if not message:
         raise LLMResponseFormatError("模型返回缺少 message 字段。")
 
