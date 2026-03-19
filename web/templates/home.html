@@ -132,10 +132,15 @@
 
       const itemCheckboxes = Array.from(document.querySelectorAll('.item-checkbox'));
       const checkboxMap = new Map(itemCheckboxes.map((cb) => [cb.dataset.path, cb]));
+      const selectableCheckboxes = itemCheckboxes.filter((cb) => cb.dataset.selectable === 'true');
 
       const isDescendantPath = (parentPath, targetPath) => targetPath.startsWith(`${parentPath}/`);
 
-      const getDescendants = (path) => itemCheckboxes.filter((cb) => isDescendantPath(path, cb.dataset.path));
+      const getDescendants = (path, selectableOnly = false) => itemCheckboxes.filter((cb) => {
+        const isDescendant = isDescendantPath(path, cb.dataset.path);
+        if (!isDescendant) return false;
+        return selectableOnly ? cb.dataset.selectable === 'true' : true;
+      });
 
       const getAncestors = (path) => {
         const parts = path.split('/');
@@ -143,7 +148,7 @@
         for (let index = 1; index < parts.length; index += 1) {
           const ancestorPath = parts.slice(0, index).join('/');
           const ancestorCheckbox = checkboxMap.get(ancestorPath);
-          if (ancestorCheckbox && ancestorCheckbox.dataset.type === 'dir') {
+          if (ancestorCheckbox && ancestorCheckbox.dataset.type === 'dir' && ancestorCheckbox.dataset.selectable === 'true') {
             ancestors.push(ancestorCheckbox);
           }
         }
@@ -154,7 +159,7 @@
         const ancestors = getAncestors(path);
         for (let index = ancestors.length - 1; index >= 0; index -= 1) {
           const ancestor = ancestors[index];
-          const descendants = getDescendants(ancestor.dataset.path);
+          const descendants = getDescendants(ancestor.dataset.path, true);
           ancestor.checked = descendants.length > 0 && descendants.every((cb) => cb.checked);
         }
       };
@@ -164,7 +169,7 @@
           const current = event.target;
 
           if (current.dataset.type === 'dir') {
-            getDescendants(current.dataset.path).forEach((cb) => {
+            getDescendants(current.dataset.path, true).forEach((cb) => {
               cb.checked = current.checked;
             });
           }
@@ -174,13 +179,13 @@
       });
 
       document.getElementById('select-all-btn')?.addEventListener('click', () => {
-        itemCheckboxes.forEach((cb) => {
+        selectableCheckboxes.forEach((cb) => {
           cb.checked = true;
         });
       });
 
       document.getElementById('unselect-all-btn')?.addEventListener('click', () => {
-        itemCheckboxes.forEach((cb) => {
+        selectableCheckboxes.forEach((cb) => {
           cb.checked = false;
         });
       });

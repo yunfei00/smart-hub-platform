@@ -22,6 +22,8 @@ class ScannedEntry(BaseModel):
     size: int
     mtime: float
     children: list["ScannedEntry"] = Field(default_factory=list)
+    selectable: bool = True
+    disabled_reason: str | None = None
 
 
 class ScanResponse(BaseModel):
