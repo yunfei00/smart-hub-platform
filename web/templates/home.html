@@ -11,9 +11,12 @@
   </head>
   <body class="bg-light">
     <main class="container py-4">
-      <div class="mb-4">
-        <h1 class="h3 mb-2">磁盘清理（Phase 1）</h1>
-        <p class="text-muted mb-0">当前 Agent 地址：<code>{{ agent_base_url }}</code></p>
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+        <div>
+          <h1 class="h3 mb-2">磁盘清理（Phase 1）</h1>
+          <p class="text-muted mb-0">当前 Agent 地址：<code>{{ agent_base_url }}</code></p>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="{% url 'tool-center' %}">工具中心</a>
       </div>
 
       {% if rule_error %}
