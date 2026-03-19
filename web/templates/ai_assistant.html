@@ -25,7 +25,9 @@
         <label for="mode" class="form-label">模式</label>
         <select class="form-select" id="mode" name="mode">
           <option value="qa" {% if mode == "qa" %}selected{% endif %}>通用问答</option>
-          <option value="code" {% if mode == "code" %}selected{% endif %}>代码助手</option>
+          <option value="code_generation" {% if mode == "code_generation" %}selected{% endif %}>代码生成</option>
+          <option value="code_explanation" {% if mode == "code_explanation" %}selected{% endif %}>代码解释</option>
+          <option value="script_generation" {% if mode == "script_generation" %}selected{% endif %}>脚本生成</option>
         </select>
       </div>
 
@@ -45,7 +47,7 @@
   <div class="card-body">
     <h2 class="h5">模型回答区</h2>
     {% if response.success %}
-      {% if response.type == "answer" and mode == "code" %}
+      {% if response.type == "answer" and response.render_as_code %}
       <pre class="bg-dark text-light p-3 rounded mb-0" style="white-space: pre-wrap;"><code>{{ response.answer }}</code></pre>
       {% elif response.type == "answer" %}
       <div class="border rounded p-3" style="white-space: pre-wrap;">{{ response.answer }}</div>
