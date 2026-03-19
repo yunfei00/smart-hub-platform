@@ -65,6 +65,7 @@
     <h2 class="h5">工具建议区</h2>
     {% if tool_suggestion %}
       <p class="mb-2">建议工具：<code>{{ tool_suggestion.name }}</code></p>
+      <p class="text-muted mb-2">说明：{{ tool_suggestion.message }}</p>
       <p class="mb-1 text-muted">参数预览：</p>
       <pre class="bg-light border rounded p-3 mb-0" style="white-space: pre-wrap;">{{ tool_suggestion.args|pprint }}</pre>
     {% else %}
