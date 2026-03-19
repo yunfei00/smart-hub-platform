@@ -9,6 +9,8 @@ from api.views import (
     CodeAnalysisView,
     HealthView,
     LandingView,
+    RecordCenterDetailView,
+    RecordCenterListView,
     ProjectAnalysisView,
     ToolCenterView,
 )
@@ -21,6 +23,8 @@ urlpatterns = [
     path("ai-assistant/", AIAssistantView.as_view(), name="ai-assistant"),
     path("project-analysis/", ProjectAnalysisView.as_view(), name="project-analysis"),
     path("code-analysis/", CodeAnalysisView.as_view(), name="code-analysis"),
+    path("records/", RecordCenterListView.as_view(), name="record-center"),
+    path("records/<int:record_id>/", RecordCenterDetailView.as_view(), name="record-detail"),
     path("api/ai/ask/", AIAskAPIView.as_view(), name="api-ai-ask"),
     path("api/ai/tool-execute/", AIToolExecuteAPIView.as_view(), name="api-ai-tool-execute"),
     path("api/health/", HealthView.as_view(), name="api-health"),

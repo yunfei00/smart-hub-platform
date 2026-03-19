@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib import error, request
 
 from django.conf import settings
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.views.generic import TemplateView
 from rest_framework import status
@@ -18,8 +19,10 @@ from .services.llm import (
     OpenAICompatibleLLMClient,
 )
 from .services.llm.mode_handler import LLMModes
+from .models import ExecutionRecord
 from .services.project_analysis import InvalidZipFileError, ProjectAnalysisError, ProjectAnalysisService
 from .services.code_analysis import CodeAnalysisError, CodeAnalysisService, InvalidCodeInputError
+from .services.record_center import RecordCenterService
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,15 @@ class DiskCleanupView(TemplateView):
                 context["scan_result"] = self._agent_post(
                     "/scan", {"path": selected_rule.get("path", "")}
                 )
+                RecordCenterService.create_record(
+                    record_type=ExecutionRecord.TYPE_DISK_SCAN,
+                    title=f"磁盘扫描：{selected_rule.get('name', '未命名规则')}",
+                    summary=(
+                        f"扫描到 {context['scan_result'].get('file_count', 0)} 项，"
+                        f"总大小 {context['scan_result'].get('total_size', 0)} bytes。"
+                    ),
+                    content={"rule": selected_rule, "scan_result": context["scan_result"]},
+                )
             elif action == "clean":
                 if not selected_files:
                     context["page_error"] = "请先勾选要清理的项。"
@@ -133,6 +145,19 @@ class DiskCleanupView(TemplateView):
                     {"rule_id": selected_rule_id, "files": selected_files},
                 )
                 context["clean_result"] = clean_result
+                RecordCenterService.create_record(
+                    record_type=ExecutionRecord.TYPE_DISK_CLEAN,
+                    title=f"磁盘清理：{selected_rule.get('name', '未命名规则')}",
+                    summary=(
+                        f"清理 {clean_result.get('deleted_count', 0)} 项，"
+                        f"释放 {clean_result.get('freed_size', 0)} bytes。"
+                    ),
+                    content={
+                        "rule": selected_rule,
+                        "selected_files": selected_files,
+                        "clean_result": clean_result,
+                    },
+                )
                 context["scan_result"] = self._agent_post(
                     "/scan", {"path": selected_rule.get("path", "")}
                 )
@@ -178,6 +203,25 @@ class ToolCenterView(TemplateView):
                 "tool_config_path": settings.TOOL_CONFIG_PATH,
             }
         )
+        return context
+
+
+class RecordCenterListView(TemplateView):
+    template_name = "record_center_list.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({"records": ExecutionRecord.objects.all()[:100]})
+        return context
+
+
+class RecordCenterDetailView(TemplateView):
+    template_name = "record_center_detail.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        record = get_object_or_404(ExecutionRecord, pk=kwargs.get("record_id"))
+        context.update({"record": record})
         return context
 
 
@@ -377,6 +421,18 @@ class ProjectAnalysisView(TemplateView):
                 "file_summaries": result.context.file_summaries,
                 "ai_report": result.ai_report,
             }
+            RecordCenterService.create_record(
+                record_type=ExecutionRecord.TYPE_PROJECT_ANALYSIS,
+                title=f"项目分析：{result.context.project_name}",
+                summary=(
+                    f"关键文件 {len(result.context.key_files)} 个，"
+                    f"技术栈线索 {len(result.context.tech_stack_clues)} 条。"
+                ),
+                content={
+                    "uploaded_filename": uploaded_file.name,
+                    "analysis_result": context["analysis_result"],
+                },
+            )
         except InvalidZipFileError as exc:
             context["page_error"] = str(exc)
         except (
@@ -440,6 +496,17 @@ class CodeAnalysisView(TemplateView):
                 "risks": result.risks,
                 "optimization_suggestions": result.optimization_suggestions,
             }
+            RecordCenterService.create_record(
+                record_type=ExecutionRecord.TYPE_CODE_ANALYSIS,
+                title=f"代码分析：{context['uploaded_filename'] or '代码片段'}",
+                summary=f"模型 {result.model} 已完成分析。",
+                content={
+                    "input_mode": input_mode,
+                    "uploaded_filename": context["uploaded_filename"],
+                    "snippet": snippet if input_mode == "snippet" else "",
+                    "analysis_result": context["analysis_result"],
+                },
+            )
         except InvalidCodeInputError as exc:
             context["page_error"] = str(exc)
         except (
