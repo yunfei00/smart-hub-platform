@@ -13,14 +13,14 @@
 ### 已实现
 - 磁盘清理：按规则扫描、勾选、执行清理。
 - 工具中心：展示工具信息（名称/版本/分类/平台/状态/下载地址等）。
-- AI 助手入口：仅占位，支持配置项预留。
+- AI 助手：最小可用本地模型接入（OpenAI 兼容接口，默认 Ollama）。
 - 统一配置：支持通过环境变量覆盖关键参数。
 
 ### 暂不实现
 - 用户系统、权限系统
 - 数据库存储业务数据
 - 任务调度、远程控制
-- AI 模型接入、MCP、代码生成
+- MCP、自动执行本地命令、RAG/向量数据库、多轮会话记忆
 
 ## 目录结构
 
@@ -72,6 +72,8 @@ python manage.py runserver 0.0.0.0:8000
 - 首页：`http://127.0.0.1:8000/`
 - 磁盘清理：`http://127.0.0.1:8000/disk-cleanup/`
 - 工具中心：`http://127.0.0.1:8000/tools/`
+- AI 助手页面：`http://127.0.0.1:8000/ai-assistant/`
+- AI 接口：`POST http://127.0.0.1:8000/api/ai/ask/`
 - Web 健康检查：`http://127.0.0.1:8000/api/health/`
 
 ## 配置文件与环境变量
@@ -82,10 +84,12 @@ Web 统一配置位于 `web/config/settings.py`，可通过环境变量覆盖：
 - `AGENT_BASE_URL`：Web 调用 Agent 的地址
 - `TOOL_CONFIG_PATH`：工具配置 JSON 路径（默认 `web/config/tools.json`）
 - `RULES_CONFIG_PATH`：规则文件路径说明（默认 `agent/rules.json`）
-- `AI_ENABLED`：是否启用 AI 入口（仅占位）
-- `AI_PROVIDER`：AI 提供方（占位）
-- `AI_BASE_URL`：AI 服务地址（占位）
-- `AI_MODEL`：AI 模型名（占位）
+- `LLM_ENABLED`：是否启用本地模型能力（`true/false`）
+- `LLM_PROVIDER`：模型提供方（默认 `ollama`，预留 `vllm`）
+- `LLM_BASE_URL`：OpenAI 兼容服务地址（默认 `http://127.0.0.1:11434`）
+- `LLM_API_KEY`：可选 API Key（Ollama 通常可留空）
+- `LLM_MODEL`：模型名（如 `qwen2.5-coder:7b`）
+- `LLM_TIMEOUT`：请求超时秒数（默认 `30`）
 
 ### 工具配置结构（`tools.json`）
 
@@ -100,6 +104,37 @@ Web 统一配置位于 `web/config/settings.py`，可通过环境变量覆盖：
 - `category`
 - `platform`
 - `status`
+
+
+### Ollama 兼容接口示例配置
+
+```bash
+export LLM_ENABLED=true
+export LLM_PROVIDER=ollama
+export LLM_BASE_URL=http://127.0.0.1:11434
+export LLM_API_KEY=""
+export LLM_MODEL=qwen2.5-coder:7b
+export LLM_TIMEOUT=30
+```
+
+接口调用示例：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/ai/ask/ \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"qa","prompt":"请简述 Python 生成器的用途"}'
+```
+
+响应结构：
+
+```json
+{
+  "answer": "...",
+  "model": "qwen2.5-coder:7b",
+  "success": true,
+  "error_message": ""
+}
+```
 
 ## 最小部署说明（组内可交付）
 
@@ -121,3 +156,5 @@ cd web && python manage.py check
 并手工验证：
 - Agent 关闭时，磁盘清理页出现友好错误提示。
 - 工具配置损坏时，工具中心显示友好错误信息。
+- AI 助手页可提交 mode/prompt，并展示 answer/model。
+- LLM 未配置、超时、服务不可用时，页面和接口返回 error_message。

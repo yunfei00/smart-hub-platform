@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}AI 助手 · {{ project_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+  <div>
+    <h1 class="h3 mb-2">AI 助手</h1>
+    <p class="text-muted mb-1">本地模型接入（OpenAI 兼容接口）最小可用页面。</p>
+    <p class="small text-muted mb-0">Provider：<code>{{ llm_provider|default:"-" }}</code> · 模型：<code>{{ llm_model|default:"-" }}</code></p>
+  </div>
+</div>
+
+{% if page_error %}
+<div class="alert alert-warning" role="alert">{{ page_error }}</div>
+{% endif %}
+
+<section class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" class="vstack gap-3">
+      {% csrf_token %}
+      <div>
+        <label for="mode" class="form-label">模式</label>
+        <select class="form-select" id="mode" name="mode">
+          <option value="qa" {% if mode == "qa" %}selected{% endif %}>通用问答</option>
+          <option value="code" {% if mode == "code" %}selected{% endif %}>代码助手</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="prompt" class="form-label">输入</label>
+        <textarea
+          class="form-control"
+          id="prompt"
+          name="prompt"
+          rows="6"
+          placeholder="请输入问题或代码需求"
+        >{{ prompt }}</textarea>
+      </div>
+
+      <div>
+        <button class="btn btn-primary" type="submit">提交</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="card shadow-sm mt-3">
+  <div class="card-body">
+    <h2 class="h5">响应结果</h2>
+    {% if response.success %}
+      {% if mode == "code" %}
+      <pre class="bg-dark text-light p-3 rounded mb-0" style="white-space: pre-wrap;"><code>{{ response.answer }}</code></pre>
+      {% else %}
+      <div class="border rounded p-3" style="white-space: pre-wrap;">{{ response.answer }}</div>
+      {% endif %}
+      <p class="small text-muted mt-2 mb-0">model: {{ response.model }}</p>
+    {% else %}
+      <p class="text-muted mb-0">尚无结果。</p>
+      {% if response.error_message %}
+      <p class="text-danger small mt-2 mb-0">{{ response.error_message }}</p>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -35,6 +35,9 @@
             <li class="nav-item">
               <a class="nav-link{% if request.resolver_match.url_name == 'tool-center' %} active{% endif %}" href="{% url 'tool-center' %}">工具中心</a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link{% if request.resolver_match.url_name == 'ai-assistant' %} active{% endif %}" href="{% url 'ai-assistant' %}">AI 助手</a>
+            </li>
           </ul>
         </div>
       </div>

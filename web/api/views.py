@@ -3,8 +3,17 @@ from urllib import error, request
 
 from django.conf import settings
 from django.views.generic import TemplateView
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from .services.llm import (
+    LLMConfigError,
+    LLMEmptyResponseError,
+    LLMServiceUnavailableError,
+    LLMTimeoutError,
+    OpenAICompatibleLLMService,
+)
 
 
 class LandingView(TemplateView):
@@ -152,6 +161,121 @@ class ToolCenterView(TemplateView):
             }
         )
         return context
+
+
+class AIAssistantView(TemplateView):
+    template_name = "ai_assistant.html"
+
+    @staticmethod
+    def _default_response() -> dict:
+        return {"answer": "", "model": "", "success": False, "error_message": ""}
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "mode": "qa",
+                "prompt": "",
+                "response": self._default_response(),
+                "page_error": None,
+            }
+        )
+        return context
+
+    def post(self, request, *args, **kwargs):
+        context = self.get_context_data()
+        mode = request.POST.get("mode", "qa").strip().lower()
+        prompt = request.POST.get("prompt", "").strip()
+
+        context["mode"] = mode
+        context["prompt"] = prompt
+
+        if mode not in {"qa", "code"}:
+            context["page_error"] = "mode 参数不合法。"
+            return self.render_to_response(context)
+
+        if not prompt:
+            context["page_error"] = "请输入 prompt。"
+            return self.render_to_response(context)
+
+        service = OpenAICompatibleLLMService()
+        try:
+            result = service.ask(mode=mode, prompt=prompt)
+            context["response"] = {
+                "answer": result.answer,
+                "model": result.model,
+                "success": True,
+                "error_message": "",
+            }
+        except (
+            LLMConfigError,
+            LLMServiceUnavailableError,
+            LLMTimeoutError,
+            LLMEmptyResponseError,
+        ) as exc:
+            context["response"] = {
+                "answer": "",
+                "model": settings.LLM_MODEL,
+                "success": False,
+                "error_message": str(exc),
+            }
+
+        return self.render_to_response(context)
+
+
+class AIAskAPIView(APIView):
+    def post(self, request):
+        mode = str(request.data.get("mode", "qa")).strip().lower()
+        prompt = str(request.data.get("prompt", "")).strip()
+
+        if mode not in {"qa", "code"}:
+            return Response(
+                {
+                    "answer": "",
+                    "model": settings.LLM_MODEL,
+                    "success": False,
+                    "error_message": "mode 参数不合法。",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not prompt:
+            return Response(
+                {
+                    "answer": "",
+                    "model": settings.LLM_MODEL,
+                    "success": False,
+                    "error_message": "prompt 不能为空。",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        service = OpenAICompatibleLLMService()
+        try:
+            result = service.ask(mode=mode, prompt=prompt)
+            return Response(
+                {
+                    "answer": result.answer,
+                    "model": result.model,
+                    "success": True,
+                    "error_message": "",
+                }
+            )
+        except (
+            LLMConfigError,
+            LLMServiceUnavailableError,
+            LLMTimeoutError,
+            LLMEmptyResponseError,
+        ) as exc:
+            return Response(
+                {
+                    "answer": "",
+                    "model": settings.LLM_MODEL,
+                    "success": False,
+                    "error_message": str(exc),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
 
 class HealthView(APIView):

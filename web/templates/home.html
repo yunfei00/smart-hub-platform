@@ -35,13 +35,13 @@
     <div class="card shadow-sm h-100 border-secondary-subtle">
       <div class="card-body d-flex flex-column">
         <h2 class="h5">AI 助手</h2>
-        <p class="text-muted flex-grow-1 mb-2">对话式助手入口，当前仅提供占位展示。</p>
+        <p class="text-muted flex-grow-1 mb-2">本地模型接入最小版本（OpenAI 兼容接口）。</p>
         <p class="small text-muted mb-3">
-          状态：{% if ai_enabled %}已开启（占位）{% else %}未开启{% endif %}
-          {% if ai_provider %} · 提供方：{{ ai_provider }}{% endif %}
-          {% if ai_model %} · 模型：{{ ai_model }}{% endif %}
+          状态：{% if llm_enabled %}已开启{% else %}未开启{% endif %}
+          {% if llm_provider %} · Provider：{{ llm_provider }}{% endif %}
+          {% if llm_model %} · 模型：{{ llm_model }}{% endif %}
         </p>
-        <button class="btn btn-outline-secondary" type="button" disabled>建设中</button>
+        <a class="btn btn-primary" href="{% url 'ai-assistant' %}">进入</a>
       </div>
     </div>
   </div>
