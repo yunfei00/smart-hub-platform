@@ -80,7 +80,7 @@ class HomeView(TemplateView):
                 )
             elif action == "clean":
                 if not selected_files:
-                    context["page_error"] = "请先勾选要清理的文件。"
+                    context["page_error"] = "请先勾选要清理的项。"
                     return self.render_to_response(context)
 
                 clean_result = self._agent_post(
