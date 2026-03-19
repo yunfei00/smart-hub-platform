@@ -1,0 +1,10 @@
+{
+  "rules": [
+    {
+      "id": "sample-downloads",
+      "name": "Sample Downloads Scan Rule",
+      "path": "./tmp/sample-downloads",
+      "description": "示例规则：扫描本地测试目录，后续可替换为真实固定路径。"
+    }
+  ]
+}
