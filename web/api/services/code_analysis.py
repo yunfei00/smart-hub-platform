@@ -164,7 +164,7 @@ class CodeAnalysisService:
     def analyze(self, payload: CodeAnalysisInput) -> CodeAnalysisResult:
         prompt = self._build_prompt(payload)
         try:
-            result = self.llm_client.ask(
+            result = self.llm_client.ask_raw(
                 mode="code_explanation",
                 prompt=prompt,
                 recommendation_context={"pages": [], "rules": []},

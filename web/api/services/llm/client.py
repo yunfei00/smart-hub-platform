@@ -192,21 +192,11 @@ class OpenAICompatibleLLMClient:
             items=None,
         )
 
-    def ask(self, mode: str, prompt: str, recommendation_context: dict) -> LLMResult:
+    def _request_completion(self, messages: list[dict]) -> tuple[_ChatCompletion, str]:
         self._validate()
         base_url = self._normalize_openai_base_url()
         api_key = self.api_key or "ollama"
-        messages = self.prompt_builder.build_messages(mode, prompt, recommendation_context)
         client = self._build_client(base_url=base_url, api_key=api_key)
-
-        logger.debug(
-            "LLM request prepared: provider=%s api_style=%s base_url=%s model=%s mode=%s",
-            self.provider,
-            self._api_style,
-            base_url,
-            self.model,
-            mode,
-        )
 
         try:
             response = client.chat.completions.create(
@@ -244,6 +234,37 @@ class OpenAICompatibleLLMClient:
         content = self._extract_message_content(response)
         if not content:
             raise LLMEmptyResponseError("模型返回为空，请调整提问后重试。")
+        return response, content
+
+    def ask_raw(self, mode: str, prompt: str, recommendation_context: dict) -> LLMResult:
+        messages = self.prompt_builder.build_messages(mode, prompt, recommendation_context)
+        logger.debug(
+            "LLM raw request prepared: provider=%s api_style=%s base_url=%s model=%s mode=%s",
+            self.provider,
+            self._api_style,
+            self._normalize_openai_base_url(),
+            self.model,
+            mode,
+        )
+        response, content = self._request_completion(messages)
+        return LLMResult(
+            message=content,
+            model=response.model or self.model,
+            response_type="answer",
+            items=None,
+        )
+
+    def ask(self, mode: str, prompt: str, recommendation_context: dict) -> LLMResult:
+        messages = self.prompt_builder.build_messages(mode, prompt, recommendation_context)
+        logger.debug(
+            "LLM request prepared: provider=%s api_style=%s base_url=%s model=%s mode=%s",
+            self.provider,
+            self._api_style,
+            self._normalize_openai_base_url(),
+            self.model,
+            mode,
+        )
+        response, content = self._request_completion(messages)
 
         try:
             parsed = parse_llm_response(content)
