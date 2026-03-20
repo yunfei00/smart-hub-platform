@@ -16,6 +16,7 @@ from api.views import (
     SystemConfigEditView,
     SystemConfigListView,
     ToolCenterView,
+    UploadFileCenterView,
 )
 
 urlpatterns = [
@@ -30,6 +31,7 @@ urlpatterns = [
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
     path("records/<int:record_id>/", RecordCenterDetailView.as_view(), name="record-detail"),
     path("system-config/", SystemConfigListView.as_view(), name="system-config-list"),
+    path("upload-files/", UploadFileCenterView.as_view(), name="upload-file-center"),
     path(
         "system-config/<str:config_key>/edit/",
         SystemConfigEditView.as_view(),

@@ -18,12 +18,13 @@ from .services.llm import (
     OpenAICompatibleLLMClient,
 )
 from .services.llm.mode_handler import LLMModes
-from .models import ExecutionRecord, SystemConfig
+from .models import ExecutionRecord, SystemConfig, UploadFileRecord
 from .services.project_analysis import InvalidZipFileError, ProjectAnalysisError, ProjectAnalysisService
 from .services.code_analysis import CodeAnalysisError, CodeAnalysisService, InvalidCodeInputError
 from .services.dashboard import DashboardService
 from .services.record_center import RecordCenterService
 from .services.system_config import RuntimeConfig, SystemConfigService
+from .services.file_record import UploadFileRecordService
 
 
 @dataclass(frozen=True)
@@ -224,6 +225,72 @@ class RecordCenterDetailView(TemplateView):
         record = get_object_or_404(ExecutionRecord, pk=kwargs.get("record_id"))
         context.update({"record": record})
         return context
+
+
+
+
+class UploadFileCenterView(TemplateView):
+    template_name = "upload_file_center.html"
+
+    @staticmethod
+    def _format_size(size_in_bytes: int | None) -> str:
+        if size_in_bytes is None:
+            return "-"
+
+        units = ["B", "KB", "MB", "GB", "TB"]
+        size = float(size_in_bytes)
+        idx = 0
+        while size >= 1024 and idx < len(units) - 1:
+            size /= 1024
+            idx += 1
+        if idx == 0:
+            return f"{int(size)} {units[idx]}"
+        return f"{size:.2f} {units[idx]}"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        records = list(UploadFileRecord.objects.all()[:200])
+        rows: list[dict] = []
+
+        for record in records:
+            nav = UploadFileRecordService.SOURCE_NAVIGATION.get(record.source_module)
+            rows.append(
+                {
+                    "record": record,
+                    "file_exists": UploadFileRecordService.file_exists(record),
+                    "file_size_display": self._format_size(record.file_size),
+                    "source_nav": nav,
+                }
+            )
+
+        context.update(
+            {
+                "files": rows,
+                "page_error": self.request.GET.get("error", ""),
+                "page_success": self.request.GET.get("success", ""),
+            }
+        )
+        return context
+
+    def post(self, request, *args, **kwargs):
+        record_id = request.POST.get("record_id", "").strip()
+        if not record_id.isdigit():
+            context = self.get_context_data(**kwargs)
+            context["page_error"] = "记录 ID 非法。"
+            return self.render_to_response(context)
+
+        record = get_object_or_404(UploadFileRecord, pk=int(record_id))
+        _, warning = UploadFileRecordService.delete_record_and_file(record)
+
+        if warning:
+            context = self.get_context_data(**kwargs)
+            context["page_success"] = "文件记录已删除。"
+            context["page_error"] = warning
+            return self.render_to_response(context)
+
+        context = self.get_context_data(**kwargs)
+        context["page_success"] = "文件记录与本地文件已删除。"
+        return self.render_to_response(context)
 
 
 class DashboardView(TemplateView):
@@ -491,6 +558,10 @@ class ProjectAnalysisView(TemplateView):
         service = ProjectAnalysisService()
         work_dir = ""
         try:
+            UploadFileRecordService.save_upload(
+                uploaded_file,
+                source_module=UploadFileRecordService.SOURCE_PROJECT_ANALYSIS,
+            )
             result = service.analyze(uploaded_file)
             work_dir = str(Path(result.context.extract_dir).parent)
             context["analysis_result"] = {
@@ -565,6 +636,10 @@ class CodeAnalysisView(TemplateView):
                 uploaded_file = request.FILES.get("code_file")
                 if uploaded_file:
                     context["uploaded_filename"] = uploaded_file.name
+                    UploadFileRecordService.save_upload(
+                        uploaded_file,
+                        source_module=UploadFileRecordService.SOURCE_CODE_ANALYSIS,
+                    )
                 payload = service.build_input_from_upload(uploaded_file)
             else:
                 payload = service.build_input_from_snippet(snippet)
