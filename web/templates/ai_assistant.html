@@ -6,7 +6,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
   <div>
     <h1 class="h3 mb-2">AI 助手</h1>
-    <p class="text-muted mb-1">本地模型接入（OpenAI 兼容接口）+ 推荐入口点击跳转。</p>
+    <p class="text-muted mb-1">本地模型多轮会话（OpenAI 兼容接口）+ 推荐入口点击跳转。</p>
     <p class="small text-muted mb-0">Provider：<code>{{ llm_provider|default:"-" }}</code> · 模型：<code>{{ llm_model|default:"-" }}</code></p>
   </div>
 </div>
@@ -15,68 +15,97 @@
 <div class="alert alert-warning" role="alert">{{ page_error }}</div>
 {% endif %}
 
-<section class="card shadow-sm">
-  <div class="card-body">
-    <h2 class="h5">用户输入区</h2>
-    <form method="post" class="vstack gap-3">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="ask">
-      <div>
-        <label for="mode" class="form-label">模式</label>
-        <select class="form-select" id="mode" name="mode">
-          <option value="qa" {% if mode == "qa" %}selected{% endif %}>通用问答</option>
-          <option value="code_generation" {% if mode == "code_generation" %}selected{% endif %}>代码生成</option>
-          <option value="code_explanation" {% if mode == "code_explanation" %}selected{% endif %}>代码解释</option>
-          <option value="script_generation" {% if mode == "script_generation" %}selected{% endif %}>脚本生成</option>
-        </select>
-      </div>
+<div class="row g-3">
+  <aside class="col-lg-4 col-xl-3">
+    <section class="card shadow-sm h-100">
+      <div class="card-body d-grid gap-3">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="new_conversation">
+          <button class="btn btn-primary w-100" type="submit">+ 新建会话</button>
+        </form>
 
-      <div>
-        <label for="prompt" class="form-label">输入</label>
-        <textarea class="form-control" id="prompt" name="prompt" rows="6" placeholder="请输入问题或代码需求">{{ prompt }}</textarea>
+        <div>
+          <h2 class="h6 mb-2">会话列表</h2>
+          <div class="list-group">
+            {% for item in conversations %}
+              <a class="list-group-item list-group-item-action {% if active_conversation and active_conversation.id == item.id %}active{% endif %}" href="{% url 'ai-assistant' %}?conversation_id={{ item.id }}">
+                <div class="fw-semibold text-truncate">{{ item.title }}</div>
+                <div class="small {% if active_conversation and active_conversation.id == item.id %}text-white-50{% else %}text-muted{% endif %}">{{ item.updated_at|date:"Y-m-d H:i" }}</div>
+              </a>
+            {% empty %}
+              <div class="text-muted small">还没有会话，请先新建。</div>
+            {% endfor %}
+          </div>
+        </div>
       </div>
+    </section>
+  </aside>
 
-      <div>
-        <button class="btn btn-primary" type="submit">提交</button>
+  <section class="col-lg-8 col-xl-9">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">聊天区域</h2>
+
+        {% if active_conversation %}
+          <div class="border rounded p-3 mb-3" style="height: 420px; overflow-y: auto; background: #fafafa;">
+            {% for msg in messages %}
+              <div class="mb-3 d-flex {% if msg.role == 'user' %}justify-content-end{% else %}justify-content-start{% endif %}">
+                <div class="px-3 py-2 rounded {% if msg.role == 'user' %}bg-primary text-white{% elif msg.role == 'assistant' %}bg-white border{% else %}bg-light border{% endif %}" style="max-width: 85%; white-space: pre-wrap;">
+                  <div class="small mb-1 {% if msg.role == 'user' %}text-white-50{% else %}text-muted{% endif %}">{{ msg.role }} · {{ msg.created_at|date:"H:i:s" }}</div>
+                  {{ msg.content }}
+                </div>
+              </div>
+            {% empty %}
+              <p class="text-muted mb-0">当前会话暂无消息。</p>
+            {% endfor %}
+          </div>
+
+          <form method="post" class="vstack gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="ask">
+            <input type="hidden" name="conversation_id" value="{{ active_conversation.id }}">
+
+            <div>
+              <label for="mode" class="form-label">模式</label>
+              <select class="form-select" id="mode" name="mode">
+                <option value="qa" {% if mode == "qa" %}selected{% endif %}>通用问答</option>
+                <option value="code_generation" {% if mode == "code_generation" %}selected{% endif %}>代码生成</option>
+                <option value="code_explanation" {% if mode == "code_explanation" %}selected{% endif %}>代码解释</option>
+                <option value="script_generation" {% if mode == "script_generation" %}selected{% endif %}>脚本生成</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="prompt" class="form-label">继续提问</label>
+              <textarea class="form-control" id="prompt" name="prompt" rows="4" placeholder="请输入问题或代码需求">{{ prompt }}</textarea>
+            </div>
+
+            <div>
+              <button class="btn btn-primary" type="submit">发送</button>
+            </div>
+          </form>
+        {% else %}
+          <p class="text-muted mb-0">请先在左侧新建会话或选择一个会话。</p>
+        {% endif %}
       </div>
-    </form>
-  </div>
-</section>
+    </div>
 
-<section class="card shadow-sm mt-3">
-  <div class="card-body">
-    <h2 class="h5">模型回答区</h2>
-    {% if response.success %}
-      {% if response.type == "answer" and response.render_as_code %}
-      <pre class="bg-dark text-light p-3 rounded mb-0" style="white-space: pre-wrap;"><code>{{ response.answer }}</code></pre>
-      {% elif response.type == "answer" %}
-      <div class="border rounded p-3" style="white-space: pre-wrap;">{{ response.answer }}</div>
-      {% else %}
-      <div class="alert alert-info mb-0">{{ response.answer }}</div>
-      {% endif %}
-      <p class="small text-muted mt-2 mb-0">type: <code>{{ response.type }}</code> · model: {{ response.model }}</p>
-    {% else %}
-      <p class="text-muted mb-0">尚无结果。</p>
-      {% if response.error_message %}
-      <p class="text-danger small mt-2 mb-0">{{ response.error_message }}</p>
-      {% endif %}
-    {% endif %}
-  </div>
-</section>
-
-<section class="card shadow-sm mt-3">
-  <div class="card-body">
-    <h2 class="h5">推荐结果区</h2>
-    {% if recommendation_items %}
-      <div class="d-flex flex-wrap gap-2">
-      {% for item in recommendation_items %}
-        <a class="btn btn-outline-primary" href="{{ item.target_url }}">{{ item.label }}</a>
-      {% endfor %}
+    <section class="card shadow-sm mt-3">
+      <div class="card-body">
+        <h2 class="h5">推荐结果区</h2>
+        {% if recommendation_items %}
+          <div class="d-flex flex-wrap gap-2">
+          {% for item in recommendation_items %}
+            <a class="btn btn-outline-primary" href="{{ item.target_url }}">{{ item.label }}</a>
+          {% endfor %}
+          </div>
+          <p class="small text-muted mt-2 mb-0">点击按钮后将直接跳转，不会自动执行扫描或清理。</p>
+        {% else %}
+          <p class="text-muted mb-0">当前无可跳转推荐项。</p>
+        {% endif %}
       </div>
-      <p class="small text-muted mt-2 mb-0">点击按钮后将直接跳转，不会自动执行扫描或清理。</p>
-    {% else %}
-      <p class="text-muted mb-0">当前无可跳转推荐项。</p>
-    {% endif %}
-  </div>
-</section>
+    </section>
+  </section>
+</div>
 {% endblock %}

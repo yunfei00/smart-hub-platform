@@ -66,3 +66,38 @@ class UploadFileRecord(models.Model):
 
     def __str__(self) -> str:
         return f"{self.file_name} ({self.source_module})"
+
+
+class Conversation(models.Model):
+    title = models.CharField(max_length=255, default="新会话")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-created_at"]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class Message(models.Model):
+    ROLE_USER = "user"
+    ROLE_ASSISTANT = "assistant"
+    ROLE_SYSTEM = "system"
+
+    ROLE_CHOICES = [
+        (ROLE_USER, "用户"),
+        (ROLE_ASSISTANT, "助手"),
+        (ROLE_SYSTEM, "系统"),
+    ]
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
+    role = models.CharField(max_length=16, choices=ROLE_CHOICES)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.conversation_id}-{self.role}"

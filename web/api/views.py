@@ -18,7 +18,7 @@ from .services.llm import (
     OpenAICompatibleLLMClient,
 )
 from .services.llm.mode_handler import LLMModes
-from .models import ExecutionRecord, SystemConfig, UploadFileRecord
+from .models import Conversation, ExecutionRecord, Message, SystemConfig, UploadFileRecord
 from .services.project_analysis import InvalidZipFileError, ProjectAnalysisError, ProjectAnalysisService
 from .services.code_analysis import CodeAnalysisError, CodeAnalysisService, InvalidCodeInputError
 from .services.dashboard import DashboardService
@@ -376,10 +376,29 @@ class SystemConfigEditView(TemplateView):
 
 class AIAssistantView(TemplateView):
     template_name = "ai_assistant.html"
+    CONTEXT_WINDOW_SIZE = 8
 
     @staticmethod
     def _default_response() -> dict:
-        return {"answer": "", "model": "", "success": False, "error_message": "", "type": "answer", "render_as_code": False}
+        return {
+            "answer": "",
+            "model": "",
+            "success": False,
+            "error_message": "",
+            "type": "answer",
+            "render_as_code": False,
+        }
+
+    @staticmethod
+    def _default_mode() -> str:
+        return LLMModes.GENERAL_QA
+
+    @staticmethod
+    def _build_title_from_prompt(prompt: str) -> str:
+        clean_prompt = " ".join((prompt or "").strip().split())
+        if not clean_prompt:
+            return "新会话"
+        return clean_prompt[:30]
 
     @staticmethod
     def _page_whitelist() -> dict[str, NavigationItem]:
@@ -459,72 +478,139 @@ class AIAssistantView(TemplateView):
             return True
         return "```" in (answer or "")
 
+    def _get_conversation_items(self) -> list[Conversation]:
+        return list(Conversation.objects.all()[:100])
+
+    def _get_active_conversation(self, conversation_id: str | None) -> Conversation | None:
+        if not conversation_id or not str(conversation_id).isdigit():
+            return None
+        return Conversation.objects.filter(pk=int(conversation_id)).first()
+
+    def _serialize_messages(self, conversation: Conversation | None) -> list[dict]:
+        if not conversation:
+            return []
+        return [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                "created_at": msg.created_at,
+            }
+            for msg in conversation.messages.all()
+        ]
+
+    def _history_window(self, conversation: Conversation) -> list[dict]:
+        recent = list(conversation.messages.order_by("-created_at", "-id")[: self.CONTEXT_WINDOW_SIZE])
+        recent.reverse()
+        return [{"role": item.role, "content": item.content} for item in recent]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        active_conversation = kwargs.get("active_conversation")
         context.update(
             {
-                "mode": LLMModes.GENERAL_QA,
-                "prompt": "",
-                "response": self._default_response(),
-                "recommendation_items": [],
-                "page_error": None,
+                "mode": kwargs.get("mode", self._default_mode()),
+                "prompt": kwargs.get("prompt", ""),
+                "response": kwargs.get("response", self._default_response()),
+                "recommendation_items": kwargs.get("recommendation_items", []),
+                "page_error": kwargs.get("page_error"),
+                "conversations": self._get_conversation_items(),
+                "active_conversation": active_conversation,
+                "messages": self._serialize_messages(active_conversation),
             }
         )
         return context
 
-    def _handle_ask(self, context: dict, mode: str, prompt: str) -> None:
+    def _handle_ask(self, mode: str, prompt: str, conversation: Conversation) -> dict:
+        history_messages = self._history_window(conversation)
+        Message.objects.create(conversation=conversation, role=Message.ROLE_USER, content=prompt)
+        if conversation.title == "新会话":
+            conversation.title = self._build_title_from_prompt(prompt)
+            conversation.save(update_fields=["title", "updated_at"])
+
         service = OpenAICompatibleLLMClient()
-        result = service.ask(mode=mode, prompt=prompt, recommendation_context=self._recommendation_context())
-        context["response"] = {
-            "answer": result.message,
-            "model": result.model,
-            "type": result.response_type,
-            "success": True,
-            "error_message": "",
-            "render_as_code": self._should_render_as_code(mode, result.message),
-        }
-        context["recommendation_items"] = self._normalize_recommendations(
-            result.response_type, result.items
+        result = service.ask_with_history(
+            mode=mode,
+            prompt=prompt,
+            recommendation_context=self._recommendation_context(),
+            history_messages=history_messages,
         )
 
-    def post(self, request, *args, **kwargs):
-        context = self.get_context_data()
-        action = request.POST.get("action", "ask").strip().lower()
-        mode = request.POST.get("mode", LLMModes.GENERAL_QA).strip().lower()
-        prompt = request.POST.get("prompt", "").strip()
+        Message.objects.create(conversation=conversation, role=Message.ROLE_ASSISTANT, content=result.message)
+        conversation.save(update_fields=["updated_at"])
 
-        context["mode"] = mode
-        context["prompt"] = prompt
+        return {
+            "response": {
+                "answer": result.message,
+                "model": result.model,
+                "type": result.response_type,
+                "success": True,
+                "error_message": "",
+                "render_as_code": self._should_render_as_code(mode, result.message),
+            },
+            "recommendation_items": self._normalize_recommendations(result.response_type, result.items),
+        }
+
+    def get(self, request, *args, **kwargs):
+        active_conversation = self._get_active_conversation(request.GET.get("conversation_id"))
+        return self.render_to_response(self.get_context_data(active_conversation=active_conversation))
+
+    def post(self, request, *args, **kwargs):
+        action = request.POST.get("action", "ask").strip().lower()
+
+        if action == "new_conversation":
+            conversation = Conversation.objects.create(title="新会话")
+            return self.render_to_response(self.get_context_data(active_conversation=conversation))
+
+        mode = request.POST.get("mode", self._default_mode()).strip().lower()
+        prompt = request.POST.get("prompt", "").strip()
+        conversation = self._get_active_conversation(request.POST.get("conversation_id"))
+
+        context_kwargs = {
+            "mode": mode,
+            "prompt": prompt,
+            "active_conversation": conversation,
+            "response": self._default_response(),
+            "recommendation_items": [],
+            "page_error": None,
+        }
 
         if mode not in LLMModes.ALL:
-            context["page_error"] = "mode 参数不合法。"
-            return self.render_to_response(context)
+            context_kwargs["page_error"] = "mode 参数不合法。"
+            return self.render_to_response(self.get_context_data(**context_kwargs))
 
-        if action == "ask":
-            if not prompt:
-                context["page_error"] = "请输入 prompt。"
-                return self.render_to_response(context)
+        if action != "ask":
+            context_kwargs["page_error"] = "不支持的 action。"
+            return self.render_to_response(self.get_context_data(**context_kwargs))
 
-            try:
-                self._handle_ask(context, mode, prompt)
-            except (
-                LLMConfigError,
-                LLMServiceUnavailableError,
-                LLMTimeoutError,
-                LLMEmptyResponseError,
-            ) as exc:
-                context["response"] = {
-                    "answer": "",
-                    "model": RuntimeConfig.llm_model(),
-                    "type": "answer",
-                    "success": False,
-                    "error_message": str(exc),
-                    "render_as_code": False,
-                }
-            return self.render_to_response(context)
+        if not conversation:
+            conversation = Conversation.objects.create(title="新会话")
+            context_kwargs["active_conversation"] = conversation
 
-        context["page_error"] = "不支持的 action。"
-        return self.render_to_response(context)
+        if not prompt:
+            context_kwargs["page_error"] = "请输入 prompt。"
+            return self.render_to_response(self.get_context_data(**context_kwargs))
+
+        try:
+            result_payload = self._handle_ask(mode, prompt, conversation)
+            context_kwargs["response"] = result_payload["response"]
+            context_kwargs["recommendation_items"] = result_payload["recommendation_items"]
+            context_kwargs["prompt"] = ""
+        except (
+            LLMConfigError,
+            LLMServiceUnavailableError,
+            LLMTimeoutError,
+            LLMEmptyResponseError,
+        ) as exc:
+            context_kwargs["response"] = {
+                "answer": "",
+                "model": RuntimeConfig.llm_model(),
+                "type": "answer",
+                "success": False,
+                "error_message": str(exc),
+                "render_as_code": False,
+            }
+
+        return self.render_to_response(self.get_context_data(**context_kwargs))
 
 
 class ProjectAnalysisView(TemplateView):
