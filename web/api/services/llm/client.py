@@ -254,6 +254,39 @@ class OpenAICompatibleLLMClient:
             items=None,
         )
 
+    def ask_with_history(
+        self,
+        mode: str,
+        prompt: str,
+        recommendation_context: dict,
+        history_messages: list[dict],
+    ) -> LLMResult:
+        messages = self.prompt_builder.build_messages_with_history(
+            mode,
+            prompt,
+            recommendation_context,
+            history_messages=history_messages,
+        )
+        logger.debug(
+            "LLM request prepared with history: provider=%s api_style=%s base_url=%s model=%s mode=%s history=%s",
+            self.provider,
+            self._api_style,
+            self._normalize_openai_base_url(),
+            self.model,
+            mode,
+            len(history_messages),
+        )
+        response, content = self._request_completion(messages)
+
+        try:
+            parsed = parse_llm_response(content)
+        except LLMResponseFormatError as exc:
+            logger.debug("LLM response parse failed. Raw content=%s", content)
+            raise LLMEmptyResponseError(str(exc)) from exc
+
+        model_name = response.model or self.model
+        return self._from_parsed(parsed, model_name)
+
     def ask(self, mode: str, prompt: str, recommendation_context: dict) -> LLMResult:
         messages = self.prompt_builder.build_messages(mode, prompt, recommendation_context)
         logger.debug(

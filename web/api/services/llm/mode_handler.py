@@ -38,9 +38,9 @@ class LLMPromptBuilder:
 
         return "你是通用问答助手，请给出清晰、简洁、可执行的答案。"
 
-    def build_messages(self, mode: str, prompt: str, recommendation_context: dict) -> list[dict]:
+    def build_system_prompt(self, mode: str, recommendation_context: dict) -> str:
         recommendation_context_json = json.dumps(recommendation_context, ensure_ascii=False)
-        system_prompt = (
+        return (
             f"{self._mode_instruction(mode)}\n"
             "你必须只输出一个 JSON 对象，不要输出其他文本。"
             "JSON 协议："
@@ -53,7 +53,23 @@ class LLMPromptBuilder:
             f"白名单上下文：{recommendation_context_json}"
         )
 
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
+    def build_messages(self, mode: str, prompt: str, recommendation_context: dict) -> list[dict]:
+        return self.build_messages_with_history(mode, prompt, recommendation_context, history_messages=[])
+
+    def build_messages_with_history(
+        self,
+        mode: str,
+        prompt: str,
+        recommendation_context: dict,
+        history_messages: list[dict],
+    ) -> list[dict]:
+        messages = [{"role": "system", "content": self.build_system_prompt(mode, recommendation_context)}]
+        for item in history_messages:
+            role = str(item.get("role", "")).strip().lower()
+            content = str(item.get("content", "")).strip()
+            if role not in {"user", "assistant", "system"} or not content:
+                continue
+            messages.append({"role": role, "content": content})
+
+        messages.append({"role": "user", "content": prompt})
+        return messages
