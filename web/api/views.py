@@ -21,6 +21,7 @@ from .services.llm.mode_handler import LLMModes
 from .models import ExecutionRecord, SystemConfig
 from .services.project_analysis import InvalidZipFileError, ProjectAnalysisError, ProjectAnalysisService
 from .services.code_analysis import CodeAnalysisError, CodeAnalysisService, InvalidCodeInputError
+from .services.dashboard import DashboardService
 from .services.record_center import RecordCenterService
 from .services.system_config import RuntimeConfig, SystemConfigService
 
@@ -222,6 +223,41 @@ class RecordCenterDetailView(TemplateView):
         context = super().get_context_data(**kwargs)
         record = get_object_or_404(ExecutionRecord, pk=kwargs.get("record_id"))
         context.update({"record": record})
+        return context
+
+
+class DashboardView(TemplateView):
+    template_name = "dashboard.html"
+
+    @staticmethod
+    def _format_size(size_in_bytes: int | None) -> str:
+        if size_in_bytes is None:
+            return "-"
+
+        units = ["B", "KB", "MB", "GB", "TB"]
+        size = float(size_in_bytes)
+        idx = 0
+        while size >= 1024 and idx < len(units) - 1:
+            size /= 1024
+            idx += 1
+        if idx == 0:
+            return f"{int(size)} {units[idx]}"
+        return f"{size:.2f} {units[idx]}"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        stats = DashboardService.build_stats()
+        context.update(
+            {
+                "stats": stats,
+                "total_freed_display": self._format_size(stats.total_freed_bytes),
+                "ai_assistant_display": (
+                    str(stats.ai_assistant_count)
+                    if stats.ai_assistant_count is not None
+                    else "暂不可统计"
+                ),
+            }
+        )
         return context
 
 

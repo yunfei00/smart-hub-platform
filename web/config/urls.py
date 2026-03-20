@@ -7,6 +7,7 @@ from api.views import (
     AIToolExecuteAPIView,
     DiskCleanupView,
     CodeAnalysisView,
+    DashboardView,
     HealthView,
     LandingView,
     RecordCenterDetailView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("project-analysis/", ProjectAnalysisView.as_view(), name="project-analysis"),
     path("code-analysis/", CodeAnalysisView.as_view(), name="code-analysis"),
     path("records/", RecordCenterListView.as_view(), name="record-center"),
+    path("dashboard/", DashboardView.as_view(), name="dashboard"),
     path("records/<int:record_id>/", RecordCenterDetailView.as_view(), name="record-detail"),
     path("system-config/", SystemConfigListView.as_view(), name="system-config-list"),
     path(
