@@ -6,12 +6,14 @@ class LLMModes:
     CODE_GENERATION = "code_generation"
     CODE_EXPLANATION = "code_explanation"
     SCRIPT_GENERATION = "script_generation"
+    RAG_QA = "rag_qa"
 
     ALL = {
         GENERAL_QA,
         CODE_GENERATION,
         CODE_EXPLANATION,
         SCRIPT_GENERATION,
+        RAG_QA,
     }
 
 
@@ -34,6 +36,11 @@ class LLMPromptBuilder:
             return (
                 "你是脚本生成助手。按用户要求生成 Python 或 Bash 等脚本，"
                 "并补充执行前置条件与注意事项。"
+            )
+        if mode == LLMModes.RAG_QA:
+            return (
+                "你是本地知识库问答助手。优先依据给定检索片段回答，"
+                "若片段不足请明确说明，并给出可执行建议。"
             )
 
         return "你是通用问答助手，请给出清晰、简洁、可执行的答案。"

@@ -92,3 +92,8 @@ LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1/")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "ollama")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))
+
+RAG_ENABLED = env_bool("RAG_ENABLED", False)
+RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", os.getenv("LLM_MODEL", ""))
+RAG_TOP_K = int(os.getenv("RAG_TOP_K", "4"))
+RAG_INDEX_DIR = Path(os.getenv("RAG_INDEX_DIR", str(BASE_DIR / "data" / "rag_index")))

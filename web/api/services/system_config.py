@@ -43,6 +43,10 @@ class SystemConfigService:
             "工具配置文件路径",
             str(settings.TOOL_CONFIG_PATH),
         ),
+        ConfigSpec("RAG_ENABLED", "AI 配置", "bool", "是否启用 RAG 本地检索", settings.RAG_ENABLED),
+        ConfigSpec("RAG_EMBEDDING_MODEL", "AI 配置", "string", "RAG embedding 模型名", settings.RAG_EMBEDDING_MODEL),
+        ConfigSpec("RAG_TOP_K", "AI 配置", "int", "RAG 检索 Top-K", settings.RAG_TOP_K),
+        ConfigSpec("RAG_INDEX_DIR", "AI 配置", "string", "RAG 本地索引目录", str(settings.RAG_INDEX_DIR)),
     )
 
     @classmethod
@@ -137,4 +141,23 @@ class RuntimeConfig:
     @staticmethod
     def tool_config_path() -> Path:
         raw = SystemConfigService.get_value("TOOL_CONFIG_PATH", str(settings.TOOL_CONFIG_PATH), "string")
+        return Path(raw)
+
+    @staticmethod
+    def rag_enabled() -> bool:
+        return SystemConfigService.get_value("RAG_ENABLED", settings.RAG_ENABLED, "bool")
+
+    @staticmethod
+    def rag_embedding_model() -> str:
+        return SystemConfigService.get_value(
+            "RAG_EMBEDDING_MODEL", settings.RAG_EMBEDDING_MODEL, "string"
+        )
+
+    @staticmethod
+    def rag_top_k() -> int:
+        return SystemConfigService.get_value("RAG_TOP_K", settings.RAG_TOP_K, "int")
+
+    @staticmethod
+    def rag_index_dir() -> Path:
+        raw = SystemConfigService.get_value("RAG_INDEX_DIR", str(settings.RAG_INDEX_DIR), "string")
         return Path(raw)

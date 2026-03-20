@@ -25,6 +25,7 @@ from .services.dashboard import DashboardService
 from .services.record_center import RecordCenterService
 from .services.system_config import RuntimeConfig, SystemConfigService
 from .services.file_record import UploadFileRecordService
+from .services.rag import RagEmbeddingError, RagService
 
 
 @dataclass(frozen=True)
@@ -516,12 +517,20 @@ class AIAssistantView(TemplateView):
                 "conversations": self._get_conversation_items(),
                 "active_conversation": active_conversation,
                 "messages": self._serialize_messages(active_conversation),
+                "rag_enabled": RuntimeConfig.rag_enabled(),
+                "rag_references": kwargs.get("rag_references", []),
             }
         )
         return context
 
     def _handle_ask(self, mode: str, prompt: str, conversation: Conversation) -> dict:
         history_messages = self._history_window(conversation)
+        rag_references: list[dict] = []
+        final_prompt = prompt
+        if mode == LLMModes.RAG_QA and RuntimeConfig.rag_enabled():
+            rag_service = RagService()
+            final_prompt, rag_references = rag_service.answer_with_references(prompt)
+
         Message.objects.create(conversation=conversation, role=Message.ROLE_USER, content=prompt)
         if conversation.title == "新会话":
             conversation.title = self._build_title_from_prompt(prompt)
@@ -530,7 +539,7 @@ class AIAssistantView(TemplateView):
         service = OpenAICompatibleLLMClient()
         result = service.ask_with_history(
             mode=mode,
-            prompt=prompt,
+            prompt=final_prompt,
             recommendation_context=self._recommendation_context(),
             history_messages=history_messages,
         )
@@ -548,6 +557,7 @@ class AIAssistantView(TemplateView):
                 "render_as_code": self._should_render_as_code(mode, result.message),
             },
             "recommendation_items": self._normalize_recommendations(result.response_type, result.items),
+            "rag_references": rag_references,
         }
 
     def get(self, request, *args, **kwargs):
@@ -572,6 +582,7 @@ class AIAssistantView(TemplateView):
             "response": self._default_response(),
             "recommendation_items": [],
             "page_error": None,
+            "rag_references": [],
         }
 
         if mode not in LLMModes.ALL:
@@ -594,12 +605,14 @@ class AIAssistantView(TemplateView):
             result_payload = self._handle_ask(mode, prompt, conversation)
             context_kwargs["response"] = result_payload["response"]
             context_kwargs["recommendation_items"] = result_payload["recommendation_items"]
+            context_kwargs["rag_references"] = result_payload.get("rag_references", [])
             context_kwargs["prompt"] = ""
         except (
             LLMConfigError,
             LLMServiceUnavailableError,
             LLMTimeoutError,
             LLMEmptyResponseError,
+            RagEmbeddingError,
         ) as exc:
             context_kwargs["response"] = {
                 "answer": "",
@@ -679,6 +692,7 @@ class ProjectAnalysisView(TemplateView):
             LLMServiceUnavailableError,
             LLMTimeoutError,
             LLMEmptyResponseError,
+            RagEmbeddingError,
         ) as exc:
             context["page_error"] = f"模型分析失败：{exc}"
         except ProjectAnalysisError as exc:
@@ -780,6 +794,7 @@ class AIAskAPIView(APIView):
                     "type": "answer",
                     "items": [],
                     "render_as_code": False,
+                    "references": [],
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -794,16 +809,22 @@ class AIAskAPIView(APIView):
                     "type": "answer",
                     "items": [],
                     "render_as_code": False,
+                    "references": [],
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         service = OpenAICompatibleLLMClient()
         view = AIAssistantView()
+        rag_references: list[dict] = []
+        final_prompt = prompt
+        if mode == LLMModes.RAG_QA and RuntimeConfig.rag_enabled():
+            rag_service = RagService()
+            final_prompt, rag_references = rag_service.answer_with_references(prompt)
         try:
             result = service.ask(
                 mode=mode,
-                prompt=prompt,
+                prompt=final_prompt,
                 recommendation_context=view._recommendation_context(),  # pylint: disable=protected-access
             )
             items = view._normalize_recommendations(  # pylint: disable=protected-access
@@ -818,6 +839,7 @@ class AIAskAPIView(APIView):
                     "type": result.response_type,
                     "items": items,
                     "render_as_code": view._should_render_as_code(mode, result.message),  # pylint: disable=protected-access
+                    "references": rag_references,
                 }
             )
         except (
@@ -825,6 +847,7 @@ class AIAskAPIView(APIView):
             LLMServiceUnavailableError,
             LLMTimeoutError,
             LLMEmptyResponseError,
+            RagEmbeddingError,
         ) as exc:
             return Response(
                 {
@@ -835,6 +858,7 @@ class AIAskAPIView(APIView):
                     "type": "answer",
                     "items": [],
                     "render_as_code": False,
+                    "references": [],
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
