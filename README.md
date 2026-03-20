@@ -22,7 +22,7 @@
 - 用户系统、权限系统
 - 数据库存储业务数据
 - 任务调度、远程控制
-- MCP、自动脚本执行、仓库读写、RAG/向量数据库
+- MCP、自动脚本执行、仓库读写
 
 ## 目录结构
 
@@ -98,6 +98,10 @@ Web 统一配置位于 `web/config/settings.py`，可通过环境变量覆盖：
 - `LLM_API_KEY`：可选 API Key（Ollama 通常可留空）
 - `LLM_MODEL`：模型名（如 `qwen2.5-coder:32b`）
 - `LLM_TIMEOUT`：请求超时秒数（默认 `30`）
+- `RAG_ENABLED`：是否启用 RAG 问答模式（默认 `false`）
+- `RAG_EMBEDDING_MODEL`：RAG embedding 模型（默认回退 `LLM_MODEL`）
+- `RAG_TOP_K`：检索 Top-K（默认 `4`）
+- `RAG_INDEX_DIR`：本地向量索引缓存目录（默认 `web/data/rag_index`）
 
 ### 工具配置结构（`tools.json`）
 
@@ -149,9 +153,43 @@ curl -X POST http://127.0.0.1:8000/api/ai/ask/ \
 可选 `mode`：
 
 - `qa`：通用问答
+- `rag_qa`：RAG 问答（本地知识检索增强）
 - `code_generation`：代码生成
 - `code_explanation`：代码解释
 - `script_generation`：脚本生成
+
+## Phase 17：RAG（本地知识检索增强）最小可用版
+
+本阶段优先在 Django Web 落地最小可运行 RAG 链路，复用现有本地模型 OpenAI 兼容接入：
+
+1. 文档加载
+2. 文本切块
+3. 生成 embedding（`/v1/embeddings`）
+4. 写入本地向量索引缓存（优先 FAISS）
+5. 查询时检索 Top-K 片段
+6. 将检索片段与用户问题拼接后发送给本地模型生成答案
+
+### 当前知识源范围
+
+- 工具中心配置（`web/config/tools.json`）
+- 仓库 README / docs 下 Markdown 文档
+- 规则说明文本（`RULES_CONFIG_PATH`）
+- 历史分析记录摘要（最近记录摘要，作为可选来源）
+
+### 页面与返回
+
+- AI 助手新增 `rag_qa` 模式（需 `RAG_ENABLED=true`）
+- 页面展示用户提问、AI 回答，并展示引用来源列表（来源类型/路径/片段/相似度）
+- `POST /api/ai/ask/` 在 `rag_qa` 模式下返回 `references` 字段
+
+### 最小测试说明（Phase 17）
+
+1. 设置 `RAG_ENABLED=true` 并保证本地模型服务支持 OpenAI 兼容 `embeddings` + `chat/completions`。
+2. 启动 Web 后进入 `/ai-assistant/`，选择 `RAG 问答`，输入与工具配置或 README 相关问题。
+3. 预期：
+   - 能得到回答；
+   - 页面“RAG 引用来源”区域能看到来源片段；
+   - API 响应包含 `references`。
 
 
 ## Phase 7.5：AI 推荐规则并跳转页面
