@@ -80,6 +80,7 @@ python manage.py runserver 0.0.0.0:8000
 - 仪表盘页面：`http://127.0.0.1:8000/dashboard/`
 - 记录中心页面：`http://127.0.0.1:8000/records/`
 - 系统配置页面：`http://127.0.0.1:8000/system-config/`
+- 上传与文件管理中心：`http://127.0.0.1:8000/upload-files/`
 - AI 接口：`POST http://127.0.0.1:8000/api/ai/ask/`
 - Web 健康检查：`http://127.0.0.1:8000/api/health/`
 
@@ -387,3 +388,29 @@ cd web && python manage.py check
 2. 选择“上传单文件”，上传合法文本文件（如 `.py`），确认可得到分析结果。
 3. 上传不在白名单的后缀（如 `.exe`）或非 UTF-8 文件，确认页面出现友好提示。
 4. 输入超长代码内容，确认页面提示内容过大而非 traceback。
+
+
+## Phase 15：上传与文件管理中心（最小可用）
+
+本阶段新增“上传与文件管理中心”页面（`/upload-files/`），用于统一管理分析相关上传文件。
+
+### 当前管理范围
+
+- `project_analysis`：项目分析上传的 zip 文件。
+- `code_analysis`：代码分析上传的单文件。
+- 预留 `source_module` 字段，便于后续扩展更多来源模块。
+
+### 当前行为（MVP）
+
+- 新增最小文件记录模型，保存：`file_name`、`file_path`、`file_type`、`source_module`、`file_size`、`created_at`。
+- 在项目分析、代码分析上传成功后，自动写入文件记录。
+- 提供文件列表页，展示文件名/类型/来源/大小/上传时间，并提供删除操作。
+- 删除操作同时尝试删除数据库记录和本地文件；若本地文件已不存在，会显示友好提示。
+- 支持从文件记录跳转回来源分析页面（项目分析或代码分析）。
+
+### 最小测试补充（Phase 15）
+
+1. 执行 `cd web && python manage.py migrate`，确认创建 `UploadFileRecord` 表。
+2. 在 `/project-analysis/` 上传 zip 并分析，访问 `/upload-files/`，确认出现对应记录。
+3. 在 `/code-analysis/` 使用“上传单文件”分析后，访问 `/upload-files/`，确认出现对应记录。
+4. 在 `/upload-files/` 点击“删除记录与文件”，确认记录消失；若文件已被外部删除，页面提示“本地文件不存在，仅删除记录”。

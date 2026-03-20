@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}上传与文件管理中心 · {{ project_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+  <div>
+    <h1 class="h3 mb-2">上传与文件管理中心</h1>
+    <p class="text-muted mb-0">统一管理分析相关上传文件（当前支持项目分析与代码分析上传）。</p>
+  </div>
+</div>
+
+{% if page_success %}
+<div class="alert alert-success" role="alert">{{ page_success }}</div>
+{% endif %}
+{% if page_error %}
+<div class="alert alert-warning" role="alert">{{ page_error }}</div>
+{% endif %}
+
+<section class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h5">文件列表</h2>
+    {% if files %}
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead>
+          <tr>
+            <th scope="col">文件名</th>
+            <th scope="col">文件类型</th>
+            <th scope="col">来源模块</th>
+            <th scope="col">文件大小</th>
+            <th scope="col">上传时间</th>
+            <th scope="col">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in files %}
+          <tr>
+            <td>
+              <div>{{ item.record.file_name }}</div>
+              {% if not item.file_exists %}
+              <div class="small text-warning">本地文件不存在</div>
+              {% endif %}
+            </td>
+            <td>{{ item.record.file_type }}</td>
+            <td>{{ item.record.source_module }}</td>
+            <td>{{ item.file_size_display }}</td>
+            <td>{{ item.record.created_at|date:"Y-m-d H:i:s" }}</td>
+            <td>
+              <div class="d-flex flex-wrap gap-2">
+                {% if item.source_nav %}
+                <a class="btn btn-sm btn-outline-secondary" href="{% url item.source_nav.url_name %}">{{ item.source_nav.label }}</a>
+                {% else %}
+                <button class="btn btn-sm btn-outline-secondary" type="button" disabled>来源未配置</button>
+                {% endif %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="record_id" value="{{ item.record.id }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">删除记录与文件</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">暂无上传文件记录。</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

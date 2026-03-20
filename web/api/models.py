@@ -51,3 +51,18 @@ class SystemConfig(models.Model):
 
     def __str__(self) -> str:
         return f"{self.config_group}.{self.config_key}"
+
+
+class UploadFileRecord(models.Model):
+    file_name = models.CharField(max_length=255)
+    file_path = models.CharField(max_length=1024)
+    file_type = models.CharField(max_length=32, default="unknown")
+    source_module = models.CharField(max_length=64, default="unknown")
+    file_size = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.file_name} ({self.source_module})"
