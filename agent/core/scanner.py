@@ -153,12 +153,21 @@ def clean_files(rule_id: str, files: list[str], rules: list[Rule]) -> CleanRespo
     deleted_count = 0
     freed_size = 0
     failed_files: list[str] = []
+    deleted_dirs: set[Path] = set()
+    processed_targets: set[Path] = set()
 
     for raw_path in files:
         target = _to_abs_path(raw_path, base=allowed_root)
 
         if not _is_under_dir(target, allowed_root):
             failed_files.append(raw_path)
+            continue
+
+        if target in processed_targets:
+            continue
+        processed_targets.add(target)
+
+        if any(parent in deleted_dirs for parent in target.parents):
             continue
 
         if not target.exists():
@@ -171,6 +180,7 @@ def clean_files(rule_id: str, files: list[str], rules: list[Rule]) -> CleanRespo
                 target.unlink()
             elif target.is_dir():
                 shutil.rmtree(target)
+                deleted_dirs.add(target)
             else:
                 failed_files.append(raw_path)
                 continue
